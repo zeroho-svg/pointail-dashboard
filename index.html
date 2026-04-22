@@ -3958,12 +3958,49 @@ let RULES = JSON.parse(localStorage.getItem('pt_rules') || 'null') || {
            'contractSalePrice','execMktAmount','execNetAmount','execTotalAmount'],
   },
   // 행 제외 필터: { dbType, colId, label, excludedVals: Set (저장시 배열) }
-  rowFilters: [],
+  rowFilters: [
+    {
+      dbType: 'camp',
+      colId: 'payStatus',
+      label: '결제 상태',
+      excludedVals: new Set(['결제취소']),
+    },
+    {
+      dbType: 'camp',
+      colId: 'campaignStatus',
+      label: '캠페인 상태',
+      excludedVals: new Set(['취소']),
+    },
+    {
+      dbType: 'camp',
+      colId: 'corpName',
+      label: '법인명',
+      excludedVals: new Set(['다희2','스토어링크 (루루코)','포인테일','스토어링크','(주)피스비','1234']),
+    },
+  ],
 };
 // Set 복원 + 구버전 호환 (dbType 없으면 'camp' 기본값)
 RULES.rowFilters.forEach(f => {
   if (!f.dbType) f.dbType = 'camp';
   if (Array.isArray(f.excludedVals)) f.excludedVals = new Set(f.excludedVals);
+});
+
+// ── 디폴트 규칙 병합 (localStorage에 저장된 규칙에 디폴트 누락 시 자동 추가) ──
+const DEFAULT_FILTERS = [
+  { dbType:'camp', colId:'payStatus',      label:'결제 상태',  excludedVals: new Set(['결제취소']) },
+  { dbType:'camp', colId:'campaignStatus', label:'캠페인 상태', excludedVals: new Set(['취소']) },
+  { dbType:'camp', colId:'corpName',       label:'법인명',
+    excludedVals: new Set(['다희2','스토어링크 (루루코)','포인테일','스토어링크','(주)피스비','1234']) },
+];
+DEFAULT_FILTERS.forEach(def => {
+  const exists = RULES.rowFilters.find(f => f.dbType === def.dbType && f.colId === def.colId);
+  if (!exists) {
+    // 없으면 디폴트 추가
+    RULES.rowFilters.push({ ...def, excludedVals: new Set(def.excludedVals) });
+  } else {
+    // 있으면 디폴트 값들이 포함되도록 병합
+    def.excludedVals.forEach(v => exists.excludedVals.add(v));
+  }
 });
 
 // ── 규칙 내보내기 ──────────────────────────────────────
