@@ -1027,11 +1027,21 @@ function loadState() {
 function updateLastSavedLabel() {
   const el = document.getElementById('last-saved-txt');
   if (!el) return;
-  const ts = localStorage.getItem('pt_last_saved');
-  const total = (DB.lead?.length||0)+(DB.member?.length||0)+(DB.camp?.length||0);
-  el.textContent = ts
-    ? `마지막 저장: ${ts} · 전체 ${total}건`
-    : `리드DB · 회원가입DB · 캠페인DB — 엑셀/CSV 업로드 · 중복 자동 제거`;
+  const ts      = localStorage.getItem('pt_last_saved');
+  const gsSync  = localStorage.getItem('pt_gs_last_sync');   // 구글시트 동기화 시각
+  const gsSheet = localStorage.getItem('pt_gs_sheet_updated'); // 구글시트 마지막 수정 시각
+  const total   = (DB.lead?.length||0)+(DB.member?.length||0)+(DB.camp?.length||0);
+
+  let parts = [];
+  if (ts) parts.push(`마지막 저장: ${ts} · 전체 ${total}건`);
+  if (gsSync)  parts.push(`<span style="color:#1D9E75;font-weight:500">✓ 구글시트 동기화: ${gsSync}</span>`);
+  if (gsSheet) parts.push(`<span style="color:var(--tx3)">📄 구글시트 업데이트: ${gsSheet}</span>`);
+
+  if (parts.length) {
+    el.innerHTML = parts.join(' &nbsp;·&nbsp; ');
+  } else {
+    el.textContent = '리드DB · 회원가입DB · 캠페인DB — 엑셀/CSV 업로드 · 중복 자동 제거';
+  }
 }
 
 // ── 파일 저장 (.ptdata) ──────────────────────────────
@@ -3689,6 +3699,11 @@ async function syncDbTab(type) {
 
     const now = new Date();
     const ts = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+    // 개별 DB 동기화 시각도 저장
+    const syncFull = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${ts}`;
+    localStorage.setItem('pt_gs_last_sync', syncFull);
+    if (data.sheetLastUpdated) localStorage.setItem('pt_gs_sheet_updated', data.sheetLastUpdated);
+    updateLastSavedLabel();
     const diff = DB[type].length - prevCount;
     const diffStr = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '±0';
     const isSaved = !!localStorage.getItem('pt_db');
@@ -4610,6 +4625,17 @@ async function syncFromSheets() {
 
     saveState();
     renderAll();
+
+    // 구글시트 동기화 시각 저장
+    const now = new Date();
+    const syncTs = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    localStorage.setItem('pt_gs_last_sync', syncTs);
+
+    // 구글시트 마지막 수정 시각 (Apps Script에서 반환한 경우)
+    if (data.sheetLastUpdated) {
+      localStorage.setItem('pt_gs_sheet_updated', data.sheetLastUpdated);
+    }
+
     updateLastSavedLabel();
 
     // 변경 요약 토스트
@@ -4699,6 +4725,23 @@ renderAll();
 renderRecentList();
 updateLastSavedLabel();
 updateGsStatusLabel();
+
+// ── 앱 로드 시 구글시트 마지막 수정 시각 자동 조회 ──
+(async function fetchSheetInfo() {
+  const url = getGsUrl();
+  if (!url) return;
+  try {
+    const resp = await fetch(url + '?action=getSheetInfo');
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (data.sheetLastUpdated) {
+      localStorage.setItem('pt_gs_sheet_updated', data.sheetLastUpdated);
+      updateLastSavedLabel();
+    }
+  } catch(e) {
+    // 조용히 실패 (네트워크 오류 등)
+  }
+})();
 </script>
 </body>
 </html>
