@@ -1021,6 +1021,14 @@ function saveState() {
 function loadState() {
   const saved = localStorage.getItem('pt_db');
   if (saved) { try { DB = JSON.parse(saved); } catch(e){} }
+  // ── 앱 로드 시 고정 규칙 자동 재적용 ──────────────────
+  // 기기마다 localStorage 상태가 달라도 항상 동일한 규칙이 적용되도록 강제
+  ['lead','member','camp'].forEach(type => {
+    if (!DB[type]?.length) return;
+    DB[type] = DB[type]
+      .filter(row => !shouldExcludeRow(type, row))
+      .map(row => applyRulesToRow(type, row));
+  });
   updateLastSavedLabel();
 }
 
@@ -2783,7 +2791,8 @@ function sd_perfTable(rows, groupField, groupLabel, accentColor, sectionId) {
   const sid = sectionId || groupField;
   const map = {};
   rows.forEach(r => {
-    const k = (r[groupField] || '(없음)').trim() || '(없음)';
+    const k = (r[groupField] || '').trim();
+    if (!k) return; // 빈 값(담당자 미지정 등)은 집계에서 제외
     if (!map[k]) map[k] = { key:k, cnt:0, contract:0, contractMkt:0, exec:0, execMkt:0 };
     map[k].cnt++;
     map[k].contract    += sd_val(r, 'contractFinal');
