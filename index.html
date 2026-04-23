@@ -3976,8 +3976,8 @@ let RULES = JSON.parse(localStorage.getItem('pt_rules') || 'null') || {
   jpy: {
     enabled: true,
     rate: 10,
-    cols: ['contractSaleSum','contractMktCost','contractVat','contractFinal',
-           'contractSalePrice','execMktAmount','execNetAmount','execTotalAmount'],
+    cols: ['pointRevenue','contractSaleSum','contractMktCost','contractVat','contractFinal',
+           'contractSalePrice','execMktAmount','execDiscount','execNetAmount','execTotalAmount'],
   },
   // 행 제외 필터: { dbType, colId, label, excludedVals: Set (저장시 배열) }
   rowFilters: [
@@ -4030,6 +4030,16 @@ DEFAULT_FILTERS.forEach(def => {
     // label도 최신으로 갱신
     exists.label = def.label;
   }
+});
+
+// ── 일본 환율 변환 컬럼 강제 동기화 ──────────────────────
+// 코드 기본값 9개가 항상 포함되도록 강제 적용 (기기 간 차이 방지)
+const DEFAULT_JPY_COLS = [
+  'pointRevenue','contractSaleSum','contractMktCost','contractVat','contractFinal',
+  'contractSalePrice','execMktAmount','execDiscount','execNetAmount','execTotalAmount'
+];
+DEFAULT_JPY_COLS.forEach(col => {
+  if (!RULES.jpy.cols.includes(col)) RULES.jpy.cols.push(col);
 });
 
 // localStorage에 최신 규칙 즉시 저장 (다음 접속 시에도 반영)
