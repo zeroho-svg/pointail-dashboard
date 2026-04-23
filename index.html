@@ -224,6 +224,153 @@ th.cf-active{background:rgba(29,158,117,.15)!important}
 .cf-footer button{flex:1;padding:5px 0;border-radius:var(--r);border:1px solid var(--bd2);cursor:pointer;font-size:11px;font-weight:500}
 .cf-ok{background:var(--lead-tx);color:#fff;border-color:var(--lead-tx)!important}
 .cf-clear{background:var(--bg2);color:var(--tx)}
+
+/* ══════════════════════════════════════════════════
+   모바일 전용 UI (480px 이하)
+══════════════════════════════════════════════════ */
+@media(max-width:480px){
+  /* ── 기본 레이아웃 ── */
+  .app{padding:.75rem .75rem}
+
+  /* ── 상단 topbar: 제목 + 버튼 정리 ── */
+  .topbar{flex-direction:column;gap:8px;margin-bottom:1rem}
+  .topbar h1{font-size:16px}
+  #last-saved-txt{font-size:11px!important;line-height:1.6!important}
+
+  /* 상단 버튼 전체 영역 */
+  #topbar-btns{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+
+  /* 데이터 저장/불러오기 버튼 그룹 → 전체 너비 */
+  #topbar-btns > div:first-child{grid-column:1/-1;display:flex;gap:4px}
+  #topbar-btns > div:first-child .btn{flex:1;font-size:11px;padding:7px 4px;justify-content:center}
+
+  /* 다운로드 버튼 */
+  #dl-wrap{grid-column:1;display:flex}
+  #dl-wrap #dl-main-btn{width:100%;justify-content:center;font-size:12px}
+  #dl-menu{left:0;right:auto;min-width:200px}
+
+  /* 구글시트 동기화 버튼 그룹 */
+  #gs-btn-group{grid-column:2;display:flex;gap:3px;justify-content:stretch}
+  #gs-sync-btn{flex:1;font-size:11px;padding:5px 4px;justify-content:center}
+  #gs-push-btn{display:none}
+
+  /* + 데이터 입력 버튼 → 전체 너비 */
+  #topbar-btns > button.btn-p{grid-column:1/-1;padding:10px;font-size:13px;font-weight:600}
+
+  /* ── 탭 메뉴 ── */
+  .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;flex-direction:row!important;flex-wrap:nowrap!important;border-bottom:1px solid var(--bd)}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{font-size:12px;padding:8px 12px;flex-shrink:0}
+  .tab-group-btn{font-size:12px;padding:7px 10px;flex-shrink:0}
+
+  /* ── 서브 탭 (DB조회 내부) ── */
+  .filter-row{flex-wrap:wrap;gap:5px}
+
+  /* ── 패널 공통 ── */
+  .panel{padding:0}
+
+  /* ══ 영업 대시보드 ══ */
+  /* 필터 바 */
+  #tab-dashboard .filter-row{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  #tab-dashboard .filter-row > div,
+  #tab-dashboard .filter-row > label{width:100%}
+
+  /* KPI 카드 */
+  .metrics{grid-template-columns:1fr 1fr!important}
+  .mc-val{font-size:18px!important}
+
+  /* 퍼널 */
+  .funnel-stage{padding:8px 12px}
+
+  /* ══ 매출 대시보드 ══ */
+  /* 필터 바 */
+  #tab-sales-dash > div:first-child > div > div{
+    flex-direction:column;gap:6px
+  }
+  /* 날짜 인풋 */
+  #sd-from,#sd-to{width:100%!important;font-size:12px!important}
+  /* 빠른선택 버튼 */
+  #tab-sales-dash .btn.btn-sm{font-size:11px;padding:5px 7px}
+  /* 연도/분기 드롭다운 */
+  #sd-qyear{width:80px!important}
+
+  /* KPI 박스 */
+  #tab-sales-dash [style*="grid-template-columns:repeat(auto-fit"]{
+    grid-template-columns:1fr 1fr!important
+  }
+
+  /* 국가별 패널: 세로 배치 */
+  #sd-country-grid{grid-template-columns:1fr!important}
+
+  /* 분기별 그리드: 2열로 */
+  #sd-quarterly-section [style*="grid-template-columns:repeat(4"]{
+    grid-template-columns:1fr 1fr!important
+  }
+  /* 분기 연간 헤더 */
+  #sd-quarterly-section [style*="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap"]{
+    flex-direction:column;align-items:flex-start!important;gap:6px
+  }
+
+  /* 성과 테이블: 가로 스크롤 */
+  .sd-perf-grid{grid-template-columns:1fr!important}
+  #tab-sales-dash .card{padding:10px!important}
+  #tab-sales-dash table{font-size:11px!important}
+  #tab-sales-dash td,#tab-sales-dash th{padding:4px 6px!important}
+
+  /* ══ DB 조회 ══ */
+  /* 필터 바 */
+  #tab-leads-t > div,
+  #tab-mem-t > div,
+  #tab-camp-t > div{flex-wrap:wrap;gap:6px}
+  #ll-q,#mm-q,#cc-q{width:100%!important;min-width:unset!important}
+  #ll-st,#mm-st,#cc-status,#cc-country,#cc-cat{
+    width:100%!important;min-width:unset!important;font-size:12px
+  }
+  /* 조회/동기화 버튼 */
+  #db-sync-lead,#db-sync-member,#db-sync-camp{font-size:11px;padding:5px 8px}
+
+  /* DB 테이블: 가로 스크롤 */
+  #lead-table-wrap,#mem-table-wrap,#camp-table-wrap{
+    overflow-x:auto;-webkit-overflow-scrolling:touch
+  }
+  #lead-table-wrap table,
+  #mem-table-wrap table,
+  #camp-table-wrap table{min-width:600px;font-size:11px}
+  #lead-table-wrap td,#lead-table-wrap th,
+  #mem-table-wrap td,#mem-table-wrap th,
+  #camp-table-wrap td,#camp-table-wrap th{
+    padding:5px 6px!important;font-size:11px
+  }
+
+  /* ══ 설정 ══ */
+  .card-title{font-size:13px}
+  #jpy-col-list label{font-size:11px!important;padding:3px 7px!important}
+
+  /* ══ 공통 카드 ══ */
+  .card{padding:.75rem!important}
+  .card-title{margin-bottom:8px!important}
+
+  /* ══ 배지 ══ */
+  .badge{font-size:10px!important;padding:2px 6px!important}
+
+  /* ══ 검색결과 건수 ══ */
+  #ll-count,#mm-count,#cc-count{font-size:11px}
+}
+
+/* 480~768px (태블릿) */
+@media(min-width:481px) and (max-width:768px){
+  .app{padding:1rem .875rem}
+  .topbar > div:last-child{flex-wrap:wrap;gap:5px}
+  .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap}
+  .tabs::-webkit-scrollbar{display:none}
+  .tab{flex-shrink:0}
+  .tab-group-btn{flex-shrink:0}
+  #sd-country-grid{grid-template-columns:1fr!important}
+  #sd-quarterly-section [style*="grid-template-columns:repeat(4"]{
+    grid-template-columns:1fr 1fr!important
+  }
+  .metrics{grid-template-columns:repeat(3,1fr)!important}
+}
 </style>
 </head>
 <body>
@@ -231,7 +378,75 @@ th.cf-active{background:rgba(29,158,117,.15)!important}
 
 <div class="topbar" style="max-width:1800px;margin:0 auto">
   <div><h1>포인테일 통합 대시보드</h1><div id="last-saved-txt" style="font-size:12px;color:var(--tx2);margin-top:2px;line-height:1.8">리드DB · 회원가입DB · 캠페인DB — 엑셀/CSV 업로드 · 중복 자동 제거</div></div>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+  <div id="topbar-btns" style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+    <div style="display:flex;gap:4px;border:0.5px solid var(--bd2);border-radius:var(--r);padding:3px;background:var(--bg2)">
+      <button class="btn btn-sm" onclick="saveDataFile()" title="현재 데이터 전체를 .ptdata 파일로 저장" style="display:flex;align-items:center;gap:4px">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><path d="M2 14h12V5.5L10.5 2H2v12z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M10 2v4h4" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><rect x="4" y="9" width="8" height="4" rx="1" stroke="currentColor" stroke-width="1.1"/><path d="M6 7h4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
+        데이터 저장
+      </button>
+      <button class="btn btn-sm" onclick="document.getElementById('load-file-input').click()" title=".ptdata 파일 불러오기" style="display:flex;align-items:center;gap:4px">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><path d="M2 14h12V5.5L10.5 2H2v12z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M10 2v4h4" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M8 7v4M6 9l2-2 2 2" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        데이터 불러오기
+      </button>
+      <input type="file" id="load-file-input" accept=".ptdata,.json" style="display:none" onchange="loadDataFile(event)">
+    </div>
+    <!-- 다운로드 드롭다운 -->
+    <div style="position:relative;display:inline-block" id="dl-wrap">
+      <button class="btn btn-sm" onclick="toggleDlMenu()" id="dl-main-btn"
+        style="display:flex;align-items:center;gap:4px;font-weight:500">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="flex-shrink:0">
+          <path d="M8 2v8M5 7l3 3 3-3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M2 13h12" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+        </svg>
+        다운로드 ▾
+      </button>
+      <div id="dl-menu" style="display:none;position:absolute;top:calc(100% + 4px);right:0;z-index:999;
+        background:var(--bg);border:1px solid var(--bd2);border-radius:var(--rl);
+        box-shadow:0 6px 20px rgba(0,0,0,.15);min-width:200px;overflow:hidden">
+        <!-- 섹션: 개별 DB -->
+        <div style="padding:6px 10px;font-size:10px;color:var(--tx3);font-weight:600;letter-spacing:.5px;border-bottom:1px solid var(--bd)">개별 DB 다운로드</div>
+        <button onclick="dlCSV('lead');toggleDlMenu()" class="dl-menu-item">
+          📋 리드DB <span style="color:var(--tx3);font-size:10px">CSV</span>
+        </button>
+        <button onclick="dlXlsx('lead');toggleDlMenu()" class="dl-menu-item">
+          📋 리드DB <span style="color:var(--tx3);font-size:10px">Excel</span>
+        </button>
+        <button onclick="dlCSV('member');toggleDlMenu()" class="dl-menu-item">
+          👤 회원가입DB <span style="color:var(--tx3);font-size:10px">CSV</span>
+        </button>
+        <button onclick="dlXlsx('member');toggleDlMenu()" class="dl-menu-item">
+          👤 회원가입DB <span style="color:var(--tx3);font-size:10px">Excel</span>
+        </button>
+        <button onclick="dlCSV('camp');toggleDlMenu()" class="dl-menu-item">
+          📊 캠페인DB <span style="color:var(--tx3);font-size:10px">CSV</span>
+        </button>
+        <button onclick="dlXlsx('camp');toggleDlMenu()" class="dl-menu-item">
+          📊 캠페인DB <span style="color:var(--tx3);font-size:10px">Excel</span>
+        </button>
+        <!-- 섹션: 전체 -->
+        <div style="padding:6px 10px;font-size:10px;color:var(--tx3);font-weight:600;letter-spacing:.5px;border-top:1px solid var(--bd);border-bottom:1px solid var(--bd)">전체 통합</div>
+        <button onclick="dlAllXlsx();toggleDlMenu()" class="dl-menu-item" style="font-weight:500">
+          📦 전체 DB (시트 분리 Excel)
+        </button>
+        <button onclick="exportCSV();toggleDlMenu()" class="dl-menu-item">
+          🔗 통합 현황 CSV
+        </button>
+      </div>
+    </div>
+    <div id="gs-btn-group" style="display:flex;gap:4px;border:0.5px solid #1D9E75;border-radius:var(--r);padding:3px;background:rgba(29,158,117,.06)">
+      <button class="btn btn-sm" id="gs-sync-btn" onclick="syncFromSheets()" title="구글 시트 기준으로 앱 데이터 완전 동기화 (수정·삭제 포함)" style="display:flex;align-items:center;gap:4px;color:#1D9E75;font-weight:500">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><path d="M13.5 8A5.5 5.5 0 1 1 3.5 4.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><path d="M13.5 2v3.5H10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        구글시트 동기화
+      </button>
+      <button class="btn btn-sm" id="gs-push-btn" onclick="pushToSheets()" title="앱 → 구글 시트로 올리기" style="display:flex;align-items:center;gap:4px;color:#1D9E75">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><path d="M8 3v8M5 6l3-3 3 3" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 13h10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+        업로드
+      </button>
+      <button class="btn btn-sm" onclick="showGsSettings()" title="구글 시트 URL 설정" style="color:var(--tx2);padding:4px 6px">⚙</button>
+    </div>
+    <button class="btn btn-p btn-sm" onclick="showTab('add')">+ 데이터 입력</button>
+  </div>
+</div>
     <div style="display:flex;gap:4px;border:0.5px solid var(--bd2);border-radius:var(--r);padding:3px;background:var(--bg2)">
       <button class="btn btn-sm" onclick="saveDataFile()" title="현재 데이터 전체를 .ptdata 파일로 저장" style="display:flex;align-items:center;gap:4px">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="flex-shrink:0"><path d="M2 14h12V5.5L10.5 2H2v12z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><path d="M10 2v4h4" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/><rect x="4" y="9" width="8" height="4" rx="1" stroke="currentColor" stroke-width="1.1"/><path d="M6 7h4" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"/></svg>
