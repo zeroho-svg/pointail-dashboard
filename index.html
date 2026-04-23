@@ -230,7 +230,7 @@ th.cf-active{background:rgba(29,158,117,.15)!important}
 <div class="app">
 
 <div class="topbar" style="max-width:1800px;margin:0 auto">
-  <div><h1>포인테일 통합 대시보드</h1><p id="last-saved-txt" style="font-size:12px;color:var(--tx2);margin-top:2px">리드DB · 회원가입DB · 캠페인DB — 엑셀/CSV 업로드 · 중복 자동 제거</p></div>
+  <div><h1>포인테일 통합 대시보드</h1><div id="last-saved-txt" style="font-size:12px;color:var(--tx2);margin-top:2px;line-height:1.8">리드DB · 회원가입DB · 캠페인DB — 엑셀/CSV 업로드 · 중복 자동 제거</div></div>
   <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
     <div style="display:flex;gap:4px;border:0.5px solid var(--bd2);border-radius:var(--r);padding:3px;background:var(--bg2)">
       <button class="btn btn-sm" onclick="saveDataFile()" title="현재 데이터 전체를 .ptdata 파일로 저장" style="display:flex;align-items:center;gap:4px">
@@ -1028,20 +1028,27 @@ function updateLastSavedLabel() {
   const el = document.getElementById('last-saved-txt');
   if (!el) return;
   const ts      = localStorage.getItem('pt_last_saved');
-  const gsSync  = localStorage.getItem('pt_gs_last_sync');   // 구글시트 동기화 시각
-  const gsSheet = localStorage.getItem('pt_gs_sheet_updated'); // 구글시트 마지막 수정 시각
+  const gsSync  = localStorage.getItem('pt_gs_last_sync');
+  const gsSheet = localStorage.getItem('pt_gs_sheet_updated');
   const total   = (DB.lead?.length||0)+(DB.member?.length||0)+(DB.camp?.length||0);
 
-  let parts = [];
-  if (ts) parts.push(`마지막 저장: ${ts} · 전체 ${total}건`);
-  if (gsSync)  parts.push(`<span style="color:#1D9E75;font-weight:500">✓ 구글시트 동기화: ${gsSync}</span>`);
-  if (gsSheet) parts.push(`<span style="color:var(--tx3)">📄 구글시트 업데이트: ${gsSheet}</span>`);
+  // 1행: 마지막 저장 시각
+  const line1 = ts
+    ? `마지막 저장: ${ts} · 전체 ${total}건`
+    : `리드DB · 회원가입DB · 캠페인DB — 엑셀/CSV 업로드 · 중복 자동 제거`;
 
-  if (parts.length) {
-    el.innerHTML = parts.join(' &nbsp;·&nbsp; ');
-  } else {
-    el.textContent = '리드DB · 회원가입DB · 캠페인DB — 엑셀/CSV 업로드 · 중복 자동 제거';
-  }
+  // 2행: 본인 마지막 동기화 시각
+  const line2 = gsSync
+    ? `<span style="color:#1D9E75;font-weight:500">✓ 본인 마지막 동기화 시각: ${gsSync}</span>`
+    : '';
+
+  // 3행: 담당자 구글시트 업데이트 시각
+  const line3 = gsSheet
+    ? `<span style="color:var(--tx3)">📄 담당자 구글시트 업데이트 시각: ${gsSheet}</span>`
+    : '';
+
+  const lines = [line1, line2, line3].filter(Boolean);
+  el.innerHTML = lines.join('<br>');
 }
 
 // ── 파일 저장 (.ptdata) ──────────────────────────────
@@ -3984,7 +3991,7 @@ let RULES = JSON.parse(localStorage.getItem('pt_rules') || 'null') || {
       dbType: 'camp',
       colId: 'campaignStatus',
       label: '캠페인 상태',
-      excludedVals: new Set(['취소']),
+      excludedVals: new Set(['등록취소', '취소']),
     },
     {
       dbType: 'camp',
@@ -4000,23 +4007,39 @@ RULES.rowFilters.forEach(f => {
   if (Array.isArray(f.excludedVals)) f.excludedVals = new Set(f.excludedVals);
 });
 
-// ── 디폴트 규칙 병합 (localStorage에 저장된 규칙에 디폴트 누락 시 자동 추가) ──
+// ── 디폴트 규칙 강제 적용 ─────────────────────────────
+// localStorage와 무관하게 항상 고정값으로 강제 적용
+// 사용자가 해제해도 앱 재접속 시 자동 복원됨
 const DEFAULT_FILTERS = [
-  { dbType:'camp', colId:'payStatus',      label:'결제 상태',  excludedVals: new Set(['결제취소']) },
-  { dbType:'camp', colId:'campaignStatus', label:'캠페인 상태', excludedVals: new Set(['취소']) },
+  { dbType:'camp', colId:'payStatus',      label:'결제 상태',
+    excludedVals: new Set(['결제취소']) },
+  { dbType:'camp', colId:'campaignStatus', label:'캠페인 상태',
+    excludedVals: new Set(['등록취소', '취소']) },
   { dbType:'camp', colId:'corpName',       label:'법인명',
     excludedVals: new Set(['다희2','스토어링크 (루루코)','포인테일','스토어링크','(주)피스비','1234']) },
 ];
+
 DEFAULT_FILTERS.forEach(def => {
   const exists = RULES.rowFilters.find(f => f.dbType === def.dbType && f.colId === def.colId);
   if (!exists) {
-    // 없으면 디폴트 추가
+    // 없으면 추가
     RULES.rowFilters.push({ ...def, excludedVals: new Set(def.excludedVals) });
   } else {
-    // 있으면 디폴트 값들이 포함되도록 병합
+    // 있어도 디폴트 값은 반드시 포함 (강제)
     def.excludedVals.forEach(v => exists.excludedVals.add(v));
+    // label도 최신으로 갱신
+    exists.label = def.label;
   }
 });
+
+// localStorage에 최신 규칙 즉시 저장 (다음 접속 시에도 반영)
+try {
+  const saveData = {
+    ...RULES,
+    rowFilters: RULES.rowFilters.map(f => ({ ...f, excludedVals: [...f.excludedVals] }))
+  };
+  localStorage.setItem('pt_rules', JSON.stringify(saveData));
+} catch(e) { /* 저장 실패 무시 */ }
 
 // ── 규칙 내보내기 ──────────────────────────────────────
 function exportRules() {
