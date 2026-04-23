@@ -4000,7 +4000,7 @@ let RULES = JSON.parse(localStorage.getItem('pt_rules') || 'null') || {
       dbType: 'camp',
       colId: 'campaignStatus',
       label: '캠페인 상태',
-      excludedVals: new Set(['등록취소', '취소']),
+      excludedVals: new Set(['등록 취소', '취소']),
     },
     {
       dbType: 'camp',
@@ -4023,7 +4023,7 @@ const DEFAULT_FILTERS = [
   { dbType:'camp', colId:'payStatus',      label:'결제 상태',
     excludedVals: new Set(['결제취소']) },
   { dbType:'camp', colId:'campaignStatus', label:'캠페인 상태',
-    excludedVals: new Set(['등록취소', '취소']) },
+    excludedVals: new Set(['등록 취소', '취소']) },
   { dbType:'camp', colId:'corpName',       label:'법인명',
     excludedVals: new Set(['다희2','스토어링크 (루루코)','포인테일','스토어링크','(주)피스비','1234']) },
 ];
