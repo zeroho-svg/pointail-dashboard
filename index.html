@@ -370,10 +370,144 @@ th.cf-active{background:rgba(29,158,117,.15)!important}
     grid-template-columns:1fr 1fr!important
   }
   .metrics{grid-template-columns:repeat(3,1fr)!important}
+
+/* ═══════════════════════════════════════════════════════════
+   🔐 OAuth 로그인 화면 스타일
+   ═══════════════════════════════════════════════════════════ */
+#auth-screen {
+  position: fixed; inset: 0; z-index: 99999;
+  background: var(--bg3);
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column;
 }
-</style>
+#auth-card {
+  background: var(--bg);
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  padding: 48px 40px 36px;
+  max-width: 400px; width: 90%;
+  text-align: center;
+  box-shadow: 0 4px 32px rgba(0,0,0,.08);
+}
+#auth-card .auth-logo {
+  font-size: 22px; font-weight: 600; color: var(--tx);
+  letter-spacing: -0.5px; margin-bottom: 8px;
+}
+#auth-card .auth-sub {
+  font-size: 12px; color: var(--tx3); margin-bottom: 36px;
+  line-height: 1.6;
+}
+#auth-card .auth-divider {
+  height: 1px; background: var(--bd);
+  margin: 24px 0 20px;
+}
+#auth-card .auth-btn-wrap {
+  display: flex; justify-content: center;
+  margin-bottom: 16px;
+  min-height: 44px;
+}
+#auth-card .auth-domain-note {
+  font-size: 11px; color: var(--tx3);
+  border-top: 1px solid var(--bd);
+  padding-top: 14px; margin-top: 4px;
+  line-height: 1.6;
+}
+#auth-card .auth-domain-note strong {
+  color: var(--lead-h); font-weight: 600;
+}
+#auth-error {
+  display: none;
+  margin-top: 14px;
+  padding: 10px 14px;
+  background: var(--bg-d);
+  border: 1px solid var(--tx-d);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--tx-d);
+  text-align: left;
+}
+#auth-loading {
+  font-size: 13px;
+  color: var(--tx2);
+  margin-top: 16px;
+  display: none;
+}
+/* 사용자 바 (로그인 후 하단 표시) */
+#auth-user-bar {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  display: none;
+  background: var(--bg2);
+  border-top: 0.5px solid var(--bd);
+  padding: 5px 14px;
+  font-size: 11px; color: var(--tx3);
+  z-index: 9000;
+  justify-content: space-between; align-items: center;
+}
+#auth-user-bar.show { display: flex; }
+#auth-user-bar .user-info {
+  display: flex; align-items: center; gap: 8px;
+}
+#auth-user-bar .user-info img {
+  width: 18px; height: 18px; border-radius: 50%;
+}
+#auth-user-bar .user-info .user-email {
+  color: var(--tx2);
+}
+#auth-user-bar button {
+  font-size: 11px; padding: 3px 10px;
+  border: 0.5px solid var(--bd2);
+  border-radius: var(--r);
+  background: var(--bg);
+  cursor: pointer;
+  color: var(--tx2);
+  transition: background .15s;
+}
+#auth-user-bar button:hover {
+  background: var(--bg3);
+  color: var(--tx);
+}
+/* 로그인 전에는 앱 본문 숨김 */
+body.auth-pending .app { display: none; }
+
+
+<!-- 🔐 Google OAuth 2.0 (Google Identity Services) -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+
 </head>
-<body>
+<body class="auth-pending">
+
+<!-- ═══════════════════════════════════════════════════════════
+     🔐 OAuth 로그인 화면 (인증 전 표시)
+     ═══════════════════════════════════════════════════════════ -->
+<div id="auth-screen">
+  <div id="auth-card">
+    <div class="auth-logo">포인테일 통합 대시보드</div>
+    <div class="auth-sub">리드DB · 회원가입DB · 캠페인DB<br>로그인 후 이용해주세요</div>
+    
+    <div class="auth-divider"></div>
+    
+    <div class="auth-btn-wrap" id="auth-btn-wrap">
+      <!-- Google Sign-In 버튼이 여기 자동 렌더링됨 -->
+    </div>
+    
+    <div id="auth-loading">로그인 확인 중...</div>
+    <div id="auth-error"></div>
+    
+    <div class="auth-domain-note">
+      <strong>@storelink.io</strong> 계정으로만 로그인 가능합니다
+    </div>
+  </div>
+</div>
+
+<!-- 로그인 후 하단 사용자 정보 바 -->
+<div id="auth-user-bar">
+  <div class="user-info">
+    <img id="auth-user-pic" src="" alt="">
+    <span class="user-email" id="auth-user-email"></span>
+  </div>
+  <button onclick="authLogout()">로그아웃</button>
+</div>
+
 <div class="app">
 
 <div class="topbar" style="max-width:1800px;margin:0 auto">
@@ -4999,6 +5133,210 @@ updateGsStatusLabel();
     // 조용히 실패 (네트워크 오류 등)
   }
 })();
+</script>
+
+<!-- ═══════════════════════════════════════════════════════════
+     🔐 OAuth 2.0 인증 시스템
+     ═══════════════════════════════════════════════════════════ -->
+<script>
+// ── 설정 ────────────────────────────────────────────────────
+const AUTH_CONFIG = {
+  CLIENT_ID: '412852365677-78te0hmm3a2tgccesb5rqbiputqcc5ig.apps.googleusercontent.com',
+  ALLOWED_DOMAIN: 'storelink.io',  // 이 도메인만 허용
+  STORAGE_KEY: 'pt_auth_user',
+  SESSION_HOURS: 12,  // 세션 유효 시간 (시간)
+};
+
+// ── 유틸 ────────────────────────────────────────────────────
+function showAuthError(msg) {
+  const el = document.getElementById('auth-error');
+  if (el) {
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+  document.getElementById('auth-loading').style.display = 'none';
+}
+
+function hideAuthError() {
+  const el = document.getElementById('auth-error');
+  if (el) el.style.display = 'none';
+}
+
+function decodeJwt(token) {
+  try {
+    const base64Url = token.split('.')[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => 
+      '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+    ).join(''));
+    return JSON.parse(jsonPayload);
+  } catch (e) {
+    return null;
+  }
+}
+
+// ── 세션 관리 ───────────────────────────────────────────────
+function saveAuthSession(userInfo) {
+  const session = {
+    email: userInfo.email,
+    name: userInfo.name,
+    picture: userInfo.picture,
+    loginAt: Date.now(),
+    expiresAt: Date.now() + (AUTH_CONFIG.SESSION_HOURS * 60 * 60 * 1000)
+  };
+  localStorage.setItem(AUTH_CONFIG.STORAGE_KEY, JSON.stringify(session));
+  return session;
+}
+
+function getAuthSession() {
+  try {
+    const raw = localStorage.getItem(AUTH_CONFIG.STORAGE_KEY);
+    if (!raw) return null;
+    const session = JSON.parse(raw);
+    if (Date.now() > session.expiresAt) {
+      localStorage.removeItem(AUTH_CONFIG.STORAGE_KEY);
+      return null;
+    }
+    return session;
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearAuthSession() {
+  localStorage.removeItem(AUTH_CONFIG.STORAGE_KEY);
+}
+
+// ── 인증 상태 표시 ──────────────────────────────────────────
+function showApp(session) {
+  document.body.classList.remove('auth-pending');
+  document.getElementById('auth-screen').style.display = 'none';
+  
+  // 사용자 바 표시
+  const bar = document.getElementById('auth-user-bar');
+  document.getElementById('auth-user-pic').src = session.picture || '';
+  document.getElementById('auth-user-email').textContent = session.email;
+  bar.classList.add('show');
+  
+  // 앱 본문에 하단 여백 추가 (사용자 바 가림 방지)
+  document.querySelector('.app').style.paddingBottom = '40px';
+}
+
+function showLogin() {
+  document.body.classList.add('auth-pending');
+  document.getElementById('auth-screen').style.display = 'flex';
+  document.getElementById('auth-user-bar').classList.remove('show');
+}
+
+// ── 로그아웃 ────────────────────────────────────────────────
+function authLogout() {
+  clearAuthSession();
+  if (window.google && google.accounts && google.accounts.id) {
+    google.accounts.id.disableAutoSelect();
+  }
+  location.reload();
+}
+
+// ── Google ID Token 콜백 ────────────────────────────────────
+function handleGoogleSignIn(response) {
+  hideAuthError();
+  document.getElementById('auth-loading').style.display = 'block';
+  
+  const userInfo = decodeJwt(response.credential);
+  if (!userInfo) {
+    showAuthError('로그인 토큰 해석에 실패했습니다. 다시 시도해주세요.');
+    return;
+  }
+  
+  // 도메인 검증
+  if (!userInfo.email || !userInfo.email.endsWith('@' + AUTH_CONFIG.ALLOWED_DOMAIN)) {
+    showAuthError(
+      '@' + AUTH_CONFIG.ALLOWED_DOMAIN + ' 계정만 로그인 가능합니다.\n' +
+      '현재 계정: ' + (userInfo.email || '알 수 없음')
+    );
+    if (window.google && google.accounts && google.accounts.id) {
+      google.accounts.id.disableAutoSelect();
+    }
+    return;
+  }
+  
+  // 이메일 인증 확인
+  if (userInfo.email_verified === false) {
+    showAuthError('이메일 인증이 완료되지 않은 계정입니다.');
+    return;
+  }
+  
+  // 세션 저장 + 앱 표시
+  const session = saveAuthSession(userInfo);
+  showApp(session);
+}
+
+// ── 초기화 ──────────────────────────────────────────────────
+function initAuth() {
+  // 기존 세션 확인
+  const session = getAuthSession();
+  if (session) {
+    showApp(session);
+    return;
+  }
+  
+  // Google SDK 로드 대기
+  let retries = 0;
+  const maxRetries = 50; // 5초
+  const checkSdk = setInterval(() => {
+    retries++;
+    if (window.google && google.accounts && google.accounts.id) {
+      clearInterval(checkSdk);
+      
+      // Google Sign-In 초기화
+      google.accounts.id.initialize({
+        client_id: AUTH_CONFIG.CLIENT_ID,
+        callback: handleGoogleSignIn,
+        auto_select: false,
+        cancel_on_tap_outside: false,
+        hd: AUTH_CONFIG.ALLOWED_DOMAIN, // 도메인 힌트
+      });
+      
+      // 버튼 렌더링
+      const btnWrap = document.getElementById('auth-btn-wrap');
+      if (btnWrap) {
+        google.accounts.id.renderButton(btnWrap, {
+          theme: 'outline',
+          size: 'large',
+          type: 'standard',
+          text: 'signin_with',
+          shape: 'rectangular',
+          logo_alignment: 'left',
+          width: 280,
+        });
+      }
+      
+      // One Tap 프롬프트 (자동 로그인 안내)
+      google.accounts.id.prompt();
+      
+    } else if (retries >= maxRetries) {
+      clearInterval(checkSdk);
+      showAuthError(
+        'Google 로그인 SDK를 불러오지 못했습니다.\n' +
+        '인터넷 연결을 확인하고 페이지를 새로고침해주세요.'
+      );
+    }
+  }, 100);
+}
+
+// 페이지 로드 시 인증 초기화
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initAuth);
+} else {
+  initAuth();
+}
+
+// 디버깅용 (콘솔에서 확인 가능)
+window.__pointail_auth = {
+  getSession: getAuthSession,
+  logout: authLogout,
+  config: AUTH_CONFIG,
+};
 </script>
 </body>
 </html>
