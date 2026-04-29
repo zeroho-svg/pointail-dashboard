@@ -525,8 +525,9 @@ body:has(#auth-screen:not(.hidden)) .app {
 
 <!-- ═══════════════════════════════════════════════════════════
      🔐 OAuth 로그인 화면 (HTML로 즉시 표시 - JS 의존 없음)
+     v6: inline style로 100vh 강제 적용 (CSS 우선순위 무시)
      ═══════════════════════════════════════════════════════════ -->
-<div id="auth-screen">
+<div id="auth-screen" style="position:fixed !important;top:0 !important;left:0 !important;right:0 !important;bottom:0 !important;width:100vw !important;height:100vh !important;min-height:100vh !important;z-index:2147483647 !important;background:#f5f3ee !important;display:flex !important;align-items:center !important;justify-content:center !important;flex-direction:column !important;padding:20px !important;box-sizing:border-box !important;overflow:auto !important;margin:0 !important;">
   <div id="auth-card">
     <div class="auth-logo">포인테일 통합 대시보드</div>
     <div class="auth-sub">리드DB · 회원가입DB · 캠페인DB<br>로그인 후 이용해주세요</div>
