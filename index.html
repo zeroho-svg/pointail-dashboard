@@ -3103,7 +3103,11 @@ function sd_perfFilter(sid, q) {
 function sd_perfSort(sid, col) {
   const st = sd_getPerfState(sid);
   if (st.sortCol === col) st.sortDir *= -1;
-  else { st.sortCol = col; st.sortDir = -1; }
+  else {
+    st.sortCol = col;
+    // 🆕 문자열 컬럼은 오름차순(▲) 기본, 숫자는 내림차순(▼) 기본
+    st.sortDir = (col === 'key' || col === 'companyType') ? 1 : -1;
+  }
   sd_refreshPerf(sid);
 }
 
@@ -3122,10 +3126,17 @@ function sd_refreshPerf(sid) {
   const q = (st.q || '').toLowerCase();
   let rows = q ? allRows.filter(d => d.key.toLowerCase().includes(q) || (d.companyType||'').toLowerCase().includes(q)) : allRows;
 
-  // 정렬
+  // 정렬 (🆕 문자열 컬럼은 한글 locale 비교, 숫자는 그대로)
   const col = st.sortCol || 'contract';
   const dir = st.sortDir || -1;
-  rows = [...rows].sort((a,b) => (a[col] > b[col] ? 1 : a[col] < b[col] ? -1 : 0) * dir);
+  const isStringCol = (col === 'key' || col === 'companyType');
+  rows = [...rows].sort((a,b) => {
+    const va = a[col], vb = b[col];
+    if (isStringCol) {
+      return String(va||'').localeCompare(String(vb||''), 'ko') * dir;
+    }
+    return ((va > vb ? 1 : va < vb ? -1 : 0)) * dir;
+  });
 
   const maxV = rows[0]?.contract || 1;
   const PAGE = 15;
@@ -3196,10 +3207,29 @@ function sd_togglePerfRest(sid) {
   }
 }
 
-// 🆕 ─── 상세 리스트 모달 ────────────────────────────────
+// 🆕 상세 모달 정렬 상태 (모달 열릴 때마다 초기화)
+let _sdDetailState = { sortCol: null, sortDir: 1 };
+
+// 🆕 상세 모달 컬럼 정의 (정렬 키, 라벨, 정렬타입, 정렬방향)
+const SD_DETAIL_COLS = [
+  { key:'advertiserCountry', label:'국가',                    align:'left',   type:'string', getValue: r => r.advertiserCountry||'' },
+  { key:'corpName',          label:'법인명',                  align:'left',   type:'string', getValue: r => r.corpName||'' },
+  { key:'companyType',       label:'회사유형',                align:'center', type:'string', getValue: r => r.companyType||'' },
+  { key:'salesManager',      label:'영업담당자',              align:'left',   type:'string', getValue: r => r.salesManager||'' },
+  { key:'shoppingChannel',   label:'쇼핑채널',                align:'left',   type:'string', getValue: r => r.shoppingChannel||'' },
+  { key:'contractFinal',     label:'(계약) 전체매출',         align:'right',  type:'number', getValue: r => sd_val(r,'contractFinal') },
+  { key:'contractMktCost',   label:'(계약) 마케팅서비스매출', align:'right',  type:'number', getValue: r => sd_val(r,'contractMktCost') },
+  { key:'execTotalAmount',   label:'(실행) 전체매출',         align:'right',  type:'number', getValue: r => sd_vatIncl(r,'execTotalAmount'), color:'#c0392b' },
+  { key:'execNetAmount',     label:'(실행) 마케팅서비스매출', align:'right',  type:'number', getValue: r => sd_vatIncl(r,'execNetAmount') },
+];
+
+// 🆕 ─── 상세 리스트 모달 (정렬 기능 포함) ────────────────────────────────
 function sd_showDetail(sid, key, groupLabel) {
   const rows = (window.__sdGroupRows && window.__sdGroupRows[sid] && window.__sdGroupRows[sid][key]) || [];
   if (!rows.length) { alert('데이터가 없습니다.'); return; }
+
+  // 🆕 정렬 상태 초기화 (모달 열 때마다)
+  _sdDetailState = { sortCol: null, sortDir: 1, sid, key, groupLabel };
 
   // 모달 컨테이너 (이미 있으면 재사용)
   let modal = document.getElementById('sd-detail-modal');
@@ -3211,6 +3241,19 @@ function sd_showDetail(sid, key, groupLabel) {
     document.body.appendChild(modal);
   }
 
+  // 모달 외형(헤더/KPI/푸터) 렌더 (한 번만)
+  sd_renderDetailShell(sid, key, groupLabel, rows, modal);
+  // 상세 테이블 본체 렌더 (정렬 변경 시 이 부분만 다시 그림)
+  sd_renderDetailTable(rows);
+
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+// 🆕 모달 외형 렌더 (헤더 + KPI + 푸터)
+function sd_renderDetailShell(sid, key, groupLabel, rows, modal) {
+  const escapeHtml = (s) => String(s||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
   // 합계 계산
   const totals = rows.reduce((acc, r) => {
     acc.contract    += sd_val(r, 'contractFinal');
@@ -3219,31 +3262,6 @@ function sd_showDetail(sid, key, groupLabel) {
     acc.execMkt     += sd_vatIncl(r, 'execNetAmount');
     return acc;
   }, { contract:0, contractMkt:0, exec:0, execMkt:0 });
-
-  // 모달 내용
-  const escapeHtml = (s) => String(s||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
-  
-  const trHeader = (label, align) => `<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--tx2);text-align:${align||'left'};white-space:nowrap;background:var(--bg2);border-bottom:2px solid var(--bd);position:sticky;top:0;z-index:1">${label}</th>`;
-  const tdCell = (v, align, color, bold) => `<td style="padding:6px 10px;font-size:11px;text-align:${align||'left'};white-space:nowrap;${color?'color:'+color+';':''}${bold?'font-weight:600;':''}">${v}</td>`;
-
-  const tableRows = rows.map((r, i) => {
-    const ct = (r.companyType || '').trim();
-    const isAgency = ct === '대행사';
-    const bg = isAgency ? '#fef3c7' : (ct === '일반 광고주' ? '#dbeafe' : '#f3f4f6');
-    const fg = isAgency ? '#92400e' : (ct === '일반 광고주' ? '#1e40af' : '#6b7280');
-    const typeBadge = `<span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:${bg};color:${fg}">${ct||'미지정'}</span>`;
-    return `<tr style="${i%2===0?'':'background:var(--bg2)'}">
-      ${tdCell(escapeHtml(r.advertiserCountry||'-'))}
-      ${tdCell(escapeHtml(r.corpName||'-'))}
-      <td style="padding:6px 10px;text-align:center;white-space:nowrap">${typeBadge}</td>
-      ${tdCell(escapeHtml(r.salesManager||'-'))}
-      ${tdCell(escapeHtml(r.shoppingChannel||'-'))}
-      ${tdCell(sd_fmtN(sd_val(r,'contractFinal')), 'right')}
-      ${tdCell(sd_fmtN(sd_val(r,'contractMktCost')), 'right')}
-      ${tdCell(sd_fmtN(sd_vatIncl(r,'execTotalAmount')), 'right', '#c0392b')}
-      ${tdCell(sd_fmtN(sd_vatIncl(r,'execNetAmount')), 'right')}
-    </tr>`;
-  }).join('');
 
   modal.innerHTML = `
     <div style="background:var(--bg);border-radius:12px;max-width:1400px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 10px 50px rgba(0,0,0,.3);overflow:hidden">
@@ -3264,33 +3282,105 @@ function sd_showDetail(sid, key, groupLabel) {
         <div><div style="font-size:10px;color:var(--tx3)">(실행) 마케팅 서비스</div><div style="font-size:14px;font-weight:700">${sd_fmtN(totals.execMkt)}</div></div>
       </div>
 
-      <!-- 상세 테이블 -->
-      <div style="flex:1;overflow:auto;padding:0">
-        <table style="width:100%;border-collapse:collapse">
-          <thead><tr>
-            ${trHeader('국가')}
-            ${trHeader('법인명')}
-            ${trHeader('회사유형', 'center')}
-            ${trHeader('영업담당자')}
-            ${trHeader('쇼핑채널')}
-            ${trHeader('(계약) 전체매출', 'right')}
-            ${trHeader('(계약) 마케팅서비스매출', 'right')}
-            ${trHeader('(실행) 전체매출', 'right')}
-            ${trHeader('(실행) 마케팅서비스매출', 'right')}
-          </tr></thead>
-          <tbody>${tableRows}</tbody>
-        </table>
-      </div>
+      <!-- 상세 테이블 (sd_renderDetailTable로 채움) -->
+      <div id="sd-detail-table-wrap" style="flex:1;overflow:auto;padding:0"></div>
 
       <!-- 푸터 -->
-      <div style="padding:10px 20px;border-top:1px solid var(--bd);display:flex;justify-content:flex-end;gap:8px">
-        <button onclick="sd_exportDetail('${sid.replace(/'/g,"\\'")}','${String(key).replace(/'/g,"\\'")}')" style="font-size:12px;padding:6px 14px;border:1px solid var(--bd2);border-radius:6px;background:var(--bg2);color:var(--tx);cursor:pointer">📥 CSV 내보내기</button>
-        <button onclick="sd_closeDetail()" style="font-size:12px;padding:6px 14px;border:1px solid var(--bd2);border-radius:6px;background:var(--bg);color:var(--tx);cursor:pointer">닫기</button>
+      <div style="padding:10px 20px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <div style="font-size:10px;color:var(--tx3)">💡 컬럼 헤더 클릭으로 정렬 가능</div>
+        <div style="display:flex;gap:8px">
+          <button onclick="sd_resetDetailSort()" style="font-size:12px;padding:6px 14px;border:1px solid var(--bd2);border-radius:6px;background:var(--bg2);color:var(--tx2);cursor:pointer">↺ 정렬 초기화</button>
+          <button onclick="sd_exportDetail('${sid.replace(/'/g,"\\'")}','${String(key).replace(/'/g,"\\'")}')" style="font-size:12px;padding:6px 14px;border:1px solid var(--bd2);border-radius:6px;background:var(--bg2);color:var(--tx);cursor:pointer">📥 CSV 내보내기</button>
+          <button onclick="sd_closeDetail()" style="font-size:12px;padding:6px 14px;border:1px solid var(--bd2);border-radius:6px;background:var(--bg);color:var(--tx);cursor:pointer">닫기</button>
+        </div>
       </div>
     </div>
   `;
-  modal.style.display = 'flex';
-  document.body.style.overflow = 'hidden';
+}
+
+// 🆕 상세 테이블 본체 렌더 (정렬 적용)
+function sd_renderDetailTable(rows) {
+  const wrap = document.getElementById('sd-detail-table-wrap');
+  if (!wrap) return;
+
+  const escapeHtml = (s) => String(s||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+  const st = _sdDetailState;
+
+  // 정렬 적용
+  let sorted = [...rows];
+  if (st.sortCol) {
+    const colDef = SD_DETAIL_COLS.find(c => c.key === st.sortCol);
+    if (colDef) {
+      sorted.sort((a,b) => {
+        const va = colDef.getValue(a);
+        const vb = colDef.getValue(b);
+        if (colDef.type === 'string') {
+          return String(va||'').localeCompare(String(vb||''), 'ko') * st.sortDir;
+        }
+        return ((va > vb ? 1 : va < vb ? -1 : 0)) * st.sortDir;
+      });
+    }
+  }
+
+  // 헤더 (정렬 화살표 포함)
+  const sortArrow = (col) => st.sortCol === col ? (st.sortDir === -1 ? ' ▼' : ' ▲') : ' ⇅';
+  const headerCells = SD_DETAIL_COLS.map(c => {
+    const arrowColor = st.sortCol === c.key ? 'var(--lead-tx)' : 'var(--tx3)';
+    return `<th onclick="sd_sortDetail('${c.key}')" style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--tx2);text-align:${c.align};white-space:nowrap;background:var(--bg2);border-bottom:2px solid var(--bd);position:sticky;top:0;z-index:1;cursor:pointer;user-select:none" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='var(--bg2)'">${c.label}<span style="color:${arrowColor}">${sortArrow(c.key)}</span></th>`;
+  }).join('');
+
+  // 본문 (정렬된 데이터로)
+  const tableRows = sorted.map((r, i) => {
+    const ct = (r.companyType || '').trim();
+    const isAgency = ct === '대행사';
+    const bg = isAgency ? '#fef3c7' : (ct === '일반 광고주' ? '#dbeafe' : '#f3f4f6');
+    const fg = isAgency ? '#92400e' : (ct === '일반 광고주' ? '#1e40af' : '#6b7280');
+    const typeBadge = `<span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:${bg};color:${fg}">${ct||'미지정'}</span>`;
+    const tdCell = (v, align, color, bold) => `<td style="padding:6px 10px;font-size:11px;text-align:${align||'left'};white-space:nowrap;${color?'color:'+color+';':''}${bold?'font-weight:600;':''}">${v}</td>`;
+    return `<tr style="${i%2===0?'':'background:var(--bg2)'}">
+      ${tdCell(escapeHtml(r.advertiserCountry||'-'))}
+      ${tdCell(escapeHtml(r.corpName||'-'))}
+      <td style="padding:6px 10px;text-align:center;white-space:nowrap">${typeBadge}</td>
+      ${tdCell(escapeHtml(r.salesManager||'-'))}
+      ${tdCell(escapeHtml(r.shoppingChannel||'-'))}
+      ${tdCell(sd_fmtN(sd_val(r,'contractFinal')), 'right')}
+      ${tdCell(sd_fmtN(sd_val(r,'contractMktCost')), 'right')}
+      ${tdCell(sd_fmtN(sd_vatIncl(r,'execTotalAmount')), 'right', '#c0392b')}
+      ${tdCell(sd_fmtN(sd_vatIncl(r,'execNetAmount')), 'right')}
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <table style="width:100%;border-collapse:collapse">
+      <thead><tr>${headerCells}</tr></thead>
+      <tbody>${tableRows}</tbody>
+    </table>
+  `;
+}
+
+// 🆕 상세 모달 정렬 토글
+function sd_sortDetail(col) {
+  const st = _sdDetailState;
+  if (st.sortCol === col) {
+    st.sortDir *= -1;
+  } else {
+    st.sortCol = col;
+    // 문자열 컬럼은 오름차순 기본, 숫자는 내림차순 기본
+    const colDef = SD_DETAIL_COLS.find(c => c.key === col);
+    st.sortDir = (colDef && colDef.type === 'string') ? 1 : -1;
+  }
+  // 본체만 다시 그리기
+  const rows = (window.__sdGroupRows && window.__sdGroupRows[st.sid] && window.__sdGroupRows[st.sid][st.key]) || [];
+  sd_renderDetailTable(rows);
+}
+
+// 🆕 정렬 초기화
+function sd_resetDetailSort() {
+  _sdDetailState.sortCol = null;
+  _sdDetailState.sortDir = 1;
+  const st = _sdDetailState;
+  const rows = (window.__sdGroupRows && window.__sdGroupRows[st.sid] && window.__sdGroupRows[st.sid][st.key]) || [];
+  sd_renderDetailTable(rows);
 }
 
 function sd_closeDetail() {
@@ -3384,8 +3474,10 @@ function sd_perfTable(rows, groupField, groupLabel, accentColor, sectionId) {
   const st = sd_getPerfState(sid);
   const sortArrow = (col) => st.sortCol === col ? (st.sortDir === -1 ? ' ▼' : ' ▲') : ' ⇅';
   const thStyle = (col) => `style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--tx2);text-align:right;white-space:nowrap;border-bottom:2px solid var(--bd);cursor:pointer;user-select:none"`;
-  const th0Style = `style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--tx2);text-align:left;border-bottom:2px solid var(--bd)"`;
-  const thTypeStyle = `style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--tx2);text-align:center;border-bottom:2px solid var(--bd)"`;
+  // 🆕 첫 컬럼도 정렬 가능 (왼쪽 정렬)
+  const th0Style = `style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--tx2);text-align:left;border-bottom:2px solid var(--bd);cursor:pointer;user-select:none"`;
+  // 🆕 회사유형 컬럼도 정렬 가능 (가운데 정렬)
+  const thTypeStyle = `style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--tx2);text-align:center;border-bottom:2px solid var(--bd);cursor:pointer;user-select:none"`;
 
   const td  = (v, bold, color) => `<td style="padding:5px 8px;font-size:11px;text-align:right;white-space:nowrap;${bold?'font-weight:600;':''}${color?'color:'+color+';':''}">${v}</td>`;
   const td0 = (v) => `<td style="padding:5px 8px;font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${v}">${v}</td>`;
@@ -3432,8 +3524,8 @@ function sd_perfTable(rows, groupField, groupLabel, accentColor, sectionId) {
     <div id="pt-body-${sid}" style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse">
         <thead><tr>
-          <th ${th0Style}>${groupLabel}</th>
-          ${groupField === 'corpName' ? `<th ${thTypeStyle}>회사유형</th>` : ''}
+          <th ${th0Style} onclick="sd_perfSort('${sid}','key')">${groupLabel}${sortArrow('key')}</th>
+          ${groupField === 'corpName' ? `<th ${thTypeStyle} onclick="sd_perfSort('${sid}','companyType')">회사유형${sortArrow('companyType')}</th>` : ''}
           <th ${thStyle('cnt')} onclick="sd_perfSort('${sid}','cnt')">캠페인${sortArrow('cnt')}</th>
           <th ${thStyle('contract')} onclick="sd_perfSort('${sid}','contract')">(계약) 전체 매출${sortArrow('contract')}</th>
           <th ${thStyle('contractMkt')} onclick="sd_perfSort('${sid}','contractMkt')">(계약)마케팅${sortArrow('contractMkt')}</th>
