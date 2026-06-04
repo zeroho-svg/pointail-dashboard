@@ -3106,7 +3106,8 @@ function sd_perfSort(sid, col) {
   else {
     st.sortCol = col;
     // 🆕 문자열 컬럼은 오름차순(▲) 기본, 숫자는 내림차순(▼) 기본
-    st.sortDir = (col === 'key' || col === 'companyType') ? 1 : -1;
+    const stringCols = ['key', 'companyType', 'country', 'salesManager'];
+    st.sortDir = stringCols.includes(col) ? 1 : -1;
   }
   sd_refreshPerf(sid);
 }
@@ -3122,14 +3123,19 @@ function sd_refreshPerf(sid) {
   const st = sd_getPerfState(sid);
   if (!allRows) return;
 
-  // 필터
+  // 필터 (🆕 국가, 영업담당자도 검색 대상에 포함)
   const q = (st.q || '').toLowerCase();
-  let rows = q ? allRows.filter(d => d.key.toLowerCase().includes(q) || (d.companyType||'').toLowerCase().includes(q)) : allRows;
+  let rows = q ? allRows.filter(d => 
+    d.key.toLowerCase().includes(q) || 
+    (d.companyType||'').toLowerCase().includes(q) ||
+    (d.country||'').toLowerCase().includes(q) ||
+    (d.salesManager||'').toLowerCase().includes(q)
+  ) : allRows;
 
   // 정렬 (🆕 문자열 컬럼은 한글 locale 비교, 숫자는 그대로)
   const col = st.sortCol || 'contract';
   const dir = st.sortDir || -1;
-  const isStringCol = (col === 'key' || col === 'companyType');
+  const isStringCol = (col === 'key' || col === 'companyType' || col === 'country' || col === 'salesManager');
   rows = [...rows].sort((a,b) => {
     const va = a[col], vb = b[col];
     if (isStringCol) {
@@ -3156,15 +3162,33 @@ function sd_refreshPerf(sid) {
       <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:${bg};color:${fg}">${v||'미지정'}</span>
     </td>`;
   };
+  // 🆕 국가 배지 셀
+  const tdCountry = (v) => {
+    const isKR = v === '한국';
+    const isJP = v === '일본';
+    const bg = isKR ? '#dbeafe' : (isJP ? '#fee2e2' : '#f3f4f6');
+    const fg = isKR ? '#1e40af' : (isJP ? '#991b1b' : '#6b7280');
+    const flag = isKR ? '🇰🇷 ' : (isJP ? '🇯🇵 ' : '');
+    return `<td style="padding:5px 8px;text-align:center;white-space:nowrap">
+      <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:${bg};color:${fg}">${flag}${v||'미지정'}</span>
+    </td>`;
+  };
+  // 🆕 영업담당자 셀 (대표 + 추가 인원수)
+  const tdSalesManager = (name, uniqueCnt) => {
+    const extra = uniqueCnt > 1 ? ` <span style="font-size:10px;color:var(--tx3)">+${uniqueCnt-1}명</span>` : '';
+    return `<td style="padding:5px 8px;font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${name}${uniqueCnt>1?' 외 '+(uniqueCnt-1)+'명':''}">${name||'미지정'}${extra}</td>`;
+  };
 
   const makeRows = (list) => list.map((d,i) => {
     const barW = maxV > 0 ? Math.round(d.contract / maxV * 100) : 0;
     // 🆕 행 클릭 시 상세 모달
     const onClick = `onclick="sd_showDetail('${sid.replace(/'/g,"\\'")}','${String(d.key).replace(/'/g,"\\'")}','${(groupLabel||'').replace(/'/g,"\\'")}')"`;
-    const typeCol = groupField === 'corpName' ? tdType(d.companyType) : '';
+    // 🆕 광고주별: 국가, 회사유형, 법인명, 영업담당자 순서
+    const corpCols = groupField === 'corpName' 
+      ? `${tdCountry(d.country)}${tdType(d.companyType)}${td0(d.key)}${tdSalesManager(d.salesManager, d.salesManagerUnique)}`
+      : td0(d.key);
     return `<tr style="${i%2===0?'':'background:var(--bg2)'};cursor:pointer" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='${i%2===0?'transparent':'var(--bg2)'}'" ${onClick}>
-      ${td0(d.key)}
-      ${typeCol}
+      ${corpCols}
       ${td(d.cnt)}
       <td style="padding:5px 8px;min-width:110px">
         <div style="font-size:11px;font-weight:600;color:${accent};text-align:right;margin-bottom:2px">${sd_fmtN(d.contract)}</div>
@@ -3180,7 +3204,8 @@ function sd_refreshPerf(sid) {
   const restWrap = document.getElementById('pt-rest-' + sid);
   const restTbody = wrap.querySelector('tbody#pt-rest-body-' + sid);
 
-  const totalCols = groupField === 'corpName' ? 7 : 6;
+  // 🆕 광고주별은 국가+회사유형+법인명+담당자+캠페인+계약전체+계약마케팅+실행전체+실행마케팅 = 9열
+  const totalCols = groupField === 'corpName' ? 9 : 6;
   if (tbody) tbody.innerHTML = visible.length
     ? makeRows(visible)
     : `<tr><td colspan="${totalCols}" style="padding:16px;text-align:center;color:var(--tx3);font-size:12px">항목 없음</td></tr>`;
@@ -3448,15 +3473,28 @@ function sd_perfTable(rows, groupField, groupLabel, accentColor, sectionId) {
   if (!Object.keys(map).length)
     return `<div style="font-size:12px;color:var(--tx3);padding:12px">데이터 없음</div>`;
 
-  // 🆕 광고주별(corpName) 그룹은 대표 회사유형 계산 (가장 많이 나오는 값)
+  // 🆕 광고주별(corpName) 그룹은 대표 회사유형 + 국가 + 영업담당자 계산 (가장 많이 나오는 값)
   if (groupField === 'corpName') {
-    Object.values(map).forEach(g => {
-      const typeCnt = {};
-      g.rows.forEach(r => {
-        const t = (r.companyType || '').trim() || '미지정';
-        typeCnt[t] = (typeCnt[t]||0) + 1;
+    const repByCount = (rows, field) => {
+      const cnt = {};
+      rows.forEach(r => {
+        const v = (r[field] || '').trim() || '미지정';
+        cnt[v] = (cnt[v]||0) + 1;
       });
-      g.companyType = Object.entries(typeCnt).sort((a,b)=>b[1]-a[1])[0][0];
+      return Object.entries(cnt).sort((a,b)=>b[1]-a[1]);
+    };
+    Object.values(map).forEach(g => {
+      // 회사유형 대표값
+      const typeSorted = repByCount(g.rows, 'companyType');
+      g.companyType = typeSorted[0][0];
+      // 🆕 국가 대표값
+      const countrySorted = repByCount(g.rows, 'advertiserCountry');
+      g.country = countrySorted[0][0];
+      g.countryUnique = countrySorted.length; // 고유 국가 개수
+      // 🆕 영업담당자 대표값 + 고유 인원수
+      const repSorted = repByCount(g.rows, 'salesManager');
+      g.salesManager = repSorted[0][0];
+      g.salesManagerUnique = repSorted.length; // 고유 담당자 수
     });
   }
 
@@ -3491,14 +3529,33 @@ function sd_perfTable(rows, groupField, groupLabel, accentColor, sectionId) {
     </td>`;
   };
 
+  // 🆕 국가 배지 셀
+  const tdCountry = (v) => {
+    const isKR = v === '한국';
+    const isJP = v === '일본';
+    const bg = isKR ? '#dbeafe' : (isJP ? '#fee2e2' : '#f3f4f6');
+    const fg = isKR ? '#1e40af' : (isJP ? '#991b1b' : '#6b7280');
+    const flag = isKR ? '🇰🇷 ' : (isJP ? '🇯🇵 ' : '');
+    return `<td style="padding:5px 8px;text-align:center;white-space:nowrap">
+      <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:${bg};color:${fg}">${flag}${v||'미지정'}</span>
+    </td>`;
+  };
+  // 🆕 영업담당자 셀 (대표 담당자 + 추가 인원수)
+  const tdSalesManager = (name, uniqueCnt) => {
+    const extra = uniqueCnt > 1 ? ` <span style="font-size:10px;color:var(--tx3)">+${uniqueCnt-1}명</span>` : '';
+    return `<td style="padding:5px 8px;font-size:11px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${name}${uniqueCnt>1?' 외 '+(uniqueCnt-1)+'명':''}">${name||'미지정'}${extra}</td>`;
+  };
+
   const makeRows = (list) => list.map((d,i) => {
     const barW = maxV > 0 ? Math.round(d.contract / maxV * 100) : 0;
     // 🆕 행 클릭 시 상세 모달
     const onClick = `onclick="sd_showDetail('${sid.replace(/'/g,"\\'")}','${String(d.key).replace(/'/g,"\\'")}','${groupLabel.replace(/'/g,"\\'")}')"`;
-    const typeCol = groupField === 'corpName' ? tdType(d.companyType) : '';
+    // 🆕 광고주별: 국가, 회사유형, 법인명, 영업담당자 순서
+    const corpCols = groupField === 'corpName' 
+      ? `${tdCountry(d.country)}${tdType(d.companyType)}${td0(d.key)}${tdSalesManager(d.salesManager, d.salesManagerUnique)}`
+      : td0(d.key);
     return `<tr style="${i%2===0?'':'background:var(--bg2)'};cursor:pointer" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='${i%2===0?'transparent':'var(--bg2)'}'" ${onClick}>
-      ${td0(d.key)}
-      ${typeCol}
+      ${corpCols}
       ${td(d.cnt)}
       <td style="padding:5px 8px;min-width:110px">
         <div style="font-size:11px;font-weight:600;color:${accent};text-align:right;margin-bottom:2px">${sd_fmtN(d.contract)}</div>
@@ -3524,8 +3581,12 @@ function sd_perfTable(rows, groupField, groupLabel, accentColor, sectionId) {
     <div id="pt-body-${sid}" style="overflow-x:auto">
       <table style="width:100%;border-collapse:collapse">
         <thead><tr>
-          <th ${th0Style} onclick="sd_perfSort('${sid}','key')">${groupLabel}${sortArrow('key')}</th>
-          ${groupField === 'corpName' ? `<th ${thTypeStyle} onclick="sd_perfSort('${sid}','companyType')">회사유형${sortArrow('companyType')}</th>` : ''}
+          ${groupField === 'corpName' 
+            ? `<th ${thTypeStyle} onclick="sd_perfSort('${sid}','country')">국가${sortArrow('country')}</th>
+               <th ${thTypeStyle} onclick="sd_perfSort('${sid}','companyType')">회사유형${sortArrow('companyType')}</th>
+               <th ${th0Style} onclick="sd_perfSort('${sid}','key')">${groupLabel}${sortArrow('key')}</th>
+               <th ${th0Style} onclick="sd_perfSort('${sid}','salesManager')">영업담당자${sortArrow('salesManager')}</th>`
+            : `<th ${th0Style} onclick="sd_perfSort('${sid}','key')">${groupLabel}${sortArrow('key')}</th>`}
           <th ${thStyle('cnt')} onclick="sd_perfSort('${sid}','cnt')">캠페인${sortArrow('cnt')}</th>
           <th ${thStyle('contract')} onclick="sd_perfSort('${sid}','contract')">(계약) 전체 매출${sortArrow('contract')}</th>
           <th ${thStyle('contractMkt')} onclick="sd_perfSort('${sid}','contractMkt')">(계약)마케팅${sortArrow('contractMkt')}</th>
