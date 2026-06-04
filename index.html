@@ -3113,12 +3113,14 @@ function sd_refreshPerf(sid) {
   if (!wrap) return;
   const allRows = wrap._allRows;
   const accent  = wrap._accent;
+  const groupField = wrap._groupField; // 🆕 광고주별 판별용
+  const groupLabel = wrap._groupLabel; // 🆕 모달 타이틀용
   const st = sd_getPerfState(sid);
   if (!allRows) return;
 
   // 필터
   const q = (st.q || '').toLowerCase();
-  let rows = q ? allRows.filter(d => d.key.toLowerCase().includes(q)) : allRows;
+  let rows = q ? allRows.filter(d => d.key.toLowerCase().includes(q) || (d.companyType||'').toLowerCase().includes(q)) : allRows;
 
   // 정렬
   const col = st.sortCol || 'contract';
@@ -3134,11 +3136,24 @@ function sd_refreshPerf(sid) {
 
   const td  = (v, bold, color) => `<td style="padding:5px 8px;font-size:11px;text-align:right;white-space:nowrap;${bold?'font-weight:600;':''}${color?'color:'+color+';':''}">${v}</td>`;
   const td0 = (v) => `<td style="padding:5px 8px;font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${v}">${v}</td>`;
+  // 🆕 회사유형 배지 셀
+  const tdType = (v) => {
+    const isAgency = v === '대행사';
+    const bg = isAgency ? '#fef3c7' : (v === '일반 광고주' ? '#dbeafe' : '#f3f4f6');
+    const fg = isAgency ? '#92400e' : (v === '일반 광고주' ? '#1e40af' : '#6b7280');
+    return `<td style="padding:5px 8px;text-align:center;white-space:nowrap">
+      <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:${bg};color:${fg}">${v||'미지정'}</span>
+    </td>`;
+  };
 
   const makeRows = (list) => list.map((d,i) => {
     const barW = maxV > 0 ? Math.round(d.contract / maxV * 100) : 0;
-    return `<tr style="${i%2===0?'':'background:var(--bg2)'}">
+    // 🆕 행 클릭 시 상세 모달
+    const onClick = `onclick="sd_showDetail('${sid.replace(/'/g,"\\'")}','${String(d.key).replace(/'/g,"\\'")}','${(groupLabel||'').replace(/'/g,"\\'")}')"`;
+    const typeCol = groupField === 'corpName' ? tdType(d.companyType) : '';
+    return `<tr style="${i%2===0?'':'background:var(--bg2)'};cursor:pointer" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='${i%2===0?'transparent':'var(--bg2)'}'" ${onClick}>
       ${td0(d.key)}
+      ${typeCol}
       ${td(d.cnt)}
       <td style="padding:5px 8px;min-width:110px">
         <div style="font-size:11px;font-weight:600;color:${accent};text-align:right;margin-bottom:2px">${sd_fmtN(d.contract)}</div>
@@ -3154,9 +3169,10 @@ function sd_refreshPerf(sid) {
   const restWrap = document.getElementById('pt-rest-' + sid);
   const restTbody = wrap.querySelector('tbody#pt-rest-body-' + sid);
 
+  const totalCols = groupField === 'corpName' ? 7 : 6;
   if (tbody) tbody.innerHTML = visible.length
     ? makeRows(visible)
-    : `<tr><td colspan="6" style="padding:16px;text-align:center;color:var(--tx3);font-size:12px">항목 없음</td></tr>`;
+    : `<tr><td colspan="${totalCols}" style="padding:16px;text-align:center;color:var(--tx3);font-size:12px">항목 없음</td></tr>`;
 
   if (restTbody) restTbody.innerHTML = makeRows(rest);
   if (restWrap) {
@@ -3180,23 +3196,179 @@ function sd_togglePerfRest(sid) {
   }
 }
 
+// 🆕 ─── 상세 리스트 모달 ────────────────────────────────
+function sd_showDetail(sid, key, groupLabel) {
+  const rows = (window.__sdGroupRows && window.__sdGroupRows[sid] && window.__sdGroupRows[sid][key]) || [];
+  if (!rows.length) { alert('데이터가 없습니다.'); return; }
+
+  // 모달 컨테이너 (이미 있으면 재사용)
+  let modal = document.getElementById('sd-detail-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'sd-detail-modal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;padding:20px;';
+    modal.onclick = (e) => { if (e.target === modal) sd_closeDetail(); };
+    document.body.appendChild(modal);
+  }
+
+  // 합계 계산
+  const totals = rows.reduce((acc, r) => {
+    acc.contract    += sd_val(r, 'contractFinal');
+    acc.contractMkt += sd_val(r, 'contractMktCost');
+    acc.exec        += sd_vatIncl(r, 'execTotalAmount');
+    acc.execMkt     += sd_vatIncl(r, 'execNetAmount');
+    return acc;
+  }, { contract:0, contractMkt:0, exec:0, execMkt:0 });
+
+  // 모달 내용
+  const escapeHtml = (s) => String(s||'').replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+  
+  const trHeader = (label, align) => `<th style="padding:8px 10px;font-size:11px;font-weight:600;color:var(--tx2);text-align:${align||'left'};white-space:nowrap;background:var(--bg2);border-bottom:2px solid var(--bd);position:sticky;top:0;z-index:1">${label}</th>`;
+  const tdCell = (v, align, color, bold) => `<td style="padding:6px 10px;font-size:11px;text-align:${align||'left'};white-space:nowrap;${color?'color:'+color+';':''}${bold?'font-weight:600;':''}">${v}</td>`;
+
+  const tableRows = rows.map((r, i) => {
+    const ct = (r.companyType || '').trim();
+    const isAgency = ct === '대행사';
+    const bg = isAgency ? '#fef3c7' : (ct === '일반 광고주' ? '#dbeafe' : '#f3f4f6');
+    const fg = isAgency ? '#92400e' : (ct === '일반 광고주' ? '#1e40af' : '#6b7280');
+    const typeBadge = `<span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:${bg};color:${fg}">${ct||'미지정'}</span>`;
+    return `<tr style="${i%2===0?'':'background:var(--bg2)'}">
+      ${tdCell(escapeHtml(r.advertiserCountry||'-'))}
+      ${tdCell(escapeHtml(r.corpName||'-'))}
+      <td style="padding:6px 10px;text-align:center;white-space:nowrap">${typeBadge}</td>
+      ${tdCell(escapeHtml(r.salesManager||'-'))}
+      ${tdCell(escapeHtml(r.shoppingChannel||'-'))}
+      ${tdCell(sd_fmtN(sd_val(r,'contractFinal')), 'right')}
+      ${tdCell(sd_fmtN(sd_val(r,'contractMktCost')), 'right')}
+      ${tdCell(sd_fmtN(sd_vatIncl(r,'execTotalAmount')), 'right', '#c0392b')}
+      ${tdCell(sd_fmtN(sd_vatIncl(r,'execNetAmount')), 'right')}
+    </tr>`;
+  }).join('');
+
+  modal.innerHTML = `
+    <div style="background:var(--bg);border-radius:12px;max-width:1400px;width:100%;max-height:85vh;display:flex;flex-direction:column;box-shadow:0 10px 50px rgba(0,0,0,.3);overflow:hidden">
+      <!-- 헤더 -->
+      <div style="padding:16px 20px;border-bottom:1px solid var(--bd);display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-size:11px;color:var(--tx3);margin-bottom:2px">${escapeHtml(groupLabel||'상세')}</div>
+          <div style="font-size:16px;font-weight:700;color:var(--tx)">${escapeHtml(key)} <span style="font-size:12px;color:var(--tx2);font-weight:400">(총 ${rows.length}건)</span></div>
+        </div>
+        <button onclick="sd_closeDetail()" style="background:none;border:none;font-size:24px;color:var(--tx3);cursor:pointer;padding:4px 12px;border-radius:6px" onmouseover="this.style.background='var(--bg2)'" onmouseout="this.style.background='none'">×</button>
+      </div>
+
+      <!-- 합계 KPI -->
+      <div style="padding:12px 20px;background:var(--bg2);display:grid;grid-template-columns:repeat(4,1fr);gap:10px">
+        <div><div style="font-size:10px;color:var(--tx3)">(계약) 전체 매출</div><div style="font-size:14px;font-weight:700;color:var(--lead-tx)">${sd_fmtN(totals.contract)}</div></div>
+        <div><div style="font-size:10px;color:var(--tx3)">(계약) 마케팅 서비스</div><div style="font-size:14px;font-weight:700">${sd_fmtN(totals.contractMkt)}</div></div>
+        <div><div style="font-size:10px;color:var(--tx3)">(실행) 전체 매출</div><div style="font-size:14px;font-weight:700;color:#c0392b">${sd_fmtN(totals.exec)}</div></div>
+        <div><div style="font-size:10px;color:var(--tx3)">(실행) 마케팅 서비스</div><div style="font-size:14px;font-weight:700">${sd_fmtN(totals.execMkt)}</div></div>
+      </div>
+
+      <!-- 상세 테이블 -->
+      <div style="flex:1;overflow:auto;padding:0">
+        <table style="width:100%;border-collapse:collapse">
+          <thead><tr>
+            ${trHeader('국가')}
+            ${trHeader('법인명')}
+            ${trHeader('회사유형', 'center')}
+            ${trHeader('영업담당자')}
+            ${trHeader('쇼핑채널')}
+            ${trHeader('(계약) 전체매출', 'right')}
+            ${trHeader('(계약) 마케팅서비스매출', 'right')}
+            ${trHeader('(실행) 전체매출', 'right')}
+            ${trHeader('(실행) 마케팅서비스매출', 'right')}
+          </tr></thead>
+          <tbody>${tableRows}</tbody>
+        </table>
+      </div>
+
+      <!-- 푸터 -->
+      <div style="padding:10px 20px;border-top:1px solid var(--bd);display:flex;justify-content:flex-end;gap:8px">
+        <button onclick="sd_exportDetail('${sid.replace(/'/g,"\\'")}','${String(key).replace(/'/g,"\\'")}')" style="font-size:12px;padding:6px 14px;border:1px solid var(--bd2);border-radius:6px;background:var(--bg2);color:var(--tx);cursor:pointer">📥 CSV 내보내기</button>
+        <button onclick="sd_closeDetail()" style="font-size:12px;padding:6px 14px;border:1px solid var(--bd2);border-radius:6px;background:var(--bg);color:var(--tx);cursor:pointer">닫기</button>
+      </div>
+    </div>
+  `;
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function sd_closeDetail() {
+  const modal = document.getElementById('sd-detail-modal');
+  if (modal) modal.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+// 🆕 상세 리스트 CSV 내보내기
+function sd_exportDetail(sid, key) {
+  const rows = (window.__sdGroupRows && window.__sdGroupRows[sid] && window.__sdGroupRows[sid][key]) || [];
+  if (!rows.length) { alert('데이터가 없습니다.'); return; }
+  const headers = ['국가','법인명','회사유형','영업담당자','쇼핑채널','(계약) 전체매출','(계약) 마케팅서비스매출','(실행) 전체매출','(실행) 마케팅서비스매출'];
+  const esc = (v) => { v = String(v==null?'':v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g,'""') + '"' : v; };
+  const lines = [headers.join(',')];
+  rows.forEach(r => {
+    lines.push([
+      r.advertiserCountry||'',
+      r.corpName||'',
+      r.companyType||'',
+      r.salesManager||'',
+      r.shoppingChannel||'',
+      sd_val(r,'contractFinal'),
+      sd_val(r,'contractMktCost'),
+      sd_vatIncl(r,'execTotalAmount'),
+      sd_vatIncl(r,'execNetAmount'),
+    ].map(esc).join(','));
+  });
+  const csv = '\uFEFF' + lines.join('\n');
+  const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `상세_${key}_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ESC 키로 모달 닫기
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    const modal = document.getElementById('sd-detail-modal');
+    if (modal && modal.style.display !== 'none') sd_closeDetail();
+  }
+});
+
 function sd_perfTable(rows, groupField, groupLabel, accentColor, sectionId) {
   const sid = sectionId || groupField;
   const map = {};
   rows.forEach(r => {
     const k = (r[groupField] || '').trim();
     if (!k) return; // 빈 값(담당자 미지정 등)은 집계에서 제외
-    if (!map[k]) map[k] = { key:k, cnt:0, contract:0, contractMkt:0, exec:0, execMkt:0 };
+    if (!map[k]) map[k] = { key:k, cnt:0, contract:0, contractMkt:0, exec:0, execMkt:0, rows:[] };
     map[k].cnt++;
     map[k].contract    += sd_val(r, 'contractFinal');
     map[k].contractMkt += sd_val(r, 'contractMktCost');
     map[k].exec        += sd_vatIncl(r, 'execTotalAmount');
     map[k].execMkt     += sd_vatIncl(r, 'execNetAmount');
+    map[k].rows.push(r); // 🆕 원본 행 보관 (상세 모달용)
   });
   const accent = accentColor || 'var(--lead-tx)';
 
   if (!Object.keys(map).length)
     return `<div style="font-size:12px;color:var(--tx3);padding:12px">데이터 없음</div>`;
+
+  // 🆕 광고주별(corpName) 그룹은 대표 회사유형 계산 (가장 많이 나오는 값)
+  if (groupField === 'corpName') {
+    Object.values(map).forEach(g => {
+      const typeCnt = {};
+      g.rows.forEach(r => {
+        const t = (r.companyType || '').trim() || '미지정';
+        typeCnt[t] = (typeCnt[t]||0) + 1;
+      });
+      g.companyType = Object.entries(typeCnt).sort((a,b)=>b[1]-a[1])[0][0];
+    });
+  }
 
   const allRows = Object.values(map).sort((a,b) => b.contract - a.contract);
   const PAGE = 15;
@@ -3204,18 +3376,37 @@ function sd_perfTable(rows, groupField, groupLabel, accentColor, sectionId) {
   const rest    = allRows.slice(PAGE);
   const maxV    = allRows[0]?.contract || 1;
 
+  // 🆕 _allKeyToRows 전역 저장 (모달에서 사용)
+  if (!window.__sdGroupRows) window.__sdGroupRows = {};
+  window.__sdGroupRows[sid] = {};
+  allRows.forEach(g => { window.__sdGroupRows[sid][g.key] = g.rows; });
+
   const st = sd_getPerfState(sid);
   const sortArrow = (col) => st.sortCol === col ? (st.sortDir === -1 ? ' ▼' : ' ▲') : ' ⇅';
   const thStyle = (col) => `style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--tx2);text-align:right;white-space:nowrap;border-bottom:2px solid var(--bd);cursor:pointer;user-select:none"`;
   const th0Style = `style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--tx2);text-align:left;border-bottom:2px solid var(--bd)"`;
+  const thTypeStyle = `style="padding:6px 8px;font-size:10px;font-weight:600;color:var(--tx2);text-align:center;border-bottom:2px solid var(--bd)"`;
 
   const td  = (v, bold, color) => `<td style="padding:5px 8px;font-size:11px;text-align:right;white-space:nowrap;${bold?'font-weight:600;':''}${color?'color:'+color+';':''}">${v}</td>`;
   const td0 = (v) => `<td style="padding:5px 8px;font-size:11px;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${v}">${v}</td>`;
+  // 🆕 회사유형 배지 셀
+  const tdType = (v) => {
+    const isAgency = v === '대행사';
+    const bg = isAgency ? '#fef3c7' : (v === '일반 광고주' ? '#dbeafe' : '#f3f4f6');
+    const fg = isAgency ? '#92400e' : (v === '일반 광고주' ? '#1e40af' : '#6b7280');
+    return `<td style="padding:5px 8px;text-align:center;white-space:nowrap">
+      <span style="display:inline-block;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;background:${bg};color:${fg}">${v||'미지정'}</span>
+    </td>`;
+  };
 
   const makeRows = (list) => list.map((d,i) => {
     const barW = maxV > 0 ? Math.round(d.contract / maxV * 100) : 0;
-    return `<tr style="${i%2===0?'':'background:var(--bg2)'}">
+    // 🆕 행 클릭 시 상세 모달
+    const onClick = `onclick="sd_showDetail('${sid.replace(/'/g,"\\'")}','${String(d.key).replace(/'/g,"\\'")}','${groupLabel.replace(/'/g,"\\'")}')"`;
+    const typeCol = groupField === 'corpName' ? tdType(d.companyType) : '';
+    return `<tr style="${i%2===0?'':'background:var(--bg2)'};cursor:pointer" onmouseover="this.style.background='var(--bg3)'" onmouseout="this.style.background='${i%2===0?'transparent':'var(--bg2)'}'" ${onClick}>
       ${td0(d.key)}
+      ${typeCol}
       ${td(d.cnt)}
       <td style="padding:5px 8px;min-width:110px">
         <div style="font-size:11px;font-weight:600;color:${accent};text-align:right;margin-bottom:2px">${sd_fmtN(d.contract)}</div>
@@ -3242,6 +3433,7 @@ function sd_perfTable(rows, groupField, groupLabel, accentColor, sectionId) {
       <table style="width:100%;border-collapse:collapse">
         <thead><tr>
           <th ${th0Style}>${groupLabel}</th>
+          ${groupField === 'corpName' ? `<th ${thTypeStyle}>회사유형</th>` : ''}
           <th ${thStyle('cnt')} onclick="sd_perfSort('${sid}','cnt')">캠페인${sortArrow('cnt')}</th>
           <th ${thStyle('contract')} onclick="sd_perfSort('${sid}','contract')">(계약) 전체 매출${sortArrow('contract')}</th>
           <th ${thStyle('contractMkt')} onclick="sd_perfSort('${sid}','contractMkt')">(계약)마케팅${sortArrow('contractMkt')}</th>
@@ -3268,7 +3460,7 @@ function sd_perfTable(rows, groupField, groupLabel, accentColor, sectionId) {
   // DOM 구성 후 _allRows 저장 (requestAnimationFrame에서 처리)
   setTimeout(() => {
     const el = document.getElementById('pt-body-' + sid);
-    if (el) { el._allRows = allRows; el._accent = accent; }
+    if (el) { el._allRows = allRows; el._accent = accent; el._groupField = groupField; el._groupLabel = groupLabel; }
   }, 0);
 
   return html;
@@ -3577,6 +3769,25 @@ function sd_setRange(months, btn) {
   if (btn) btn.style.background = 'var(--lead-tx)', btn.style.color='#fff';
 }
 
+// 🆕 이번 달 1일 ~ 말일 자동 설정
+function sd_setThisMonth() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const from = new Date(y, m, 1);
+  const to   = new Date(y, m+1, 0); // 다음달 0일 = 이번달 말일
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const fromEl = document.getElementById('sd-from');
+  const toEl   = document.getElementById('sd-to');
+  if (fromEl) fromEl.value = fmt(from);
+  if (toEl)   toEl.value   = fmt(to);
+  // 빠른 선택 버튼 비활성화 (이번달은 별도 버튼이 없음)
+  ['sd-q3','sd-q6','sd-q12'].forEach(id => {
+    const b = document.getElementById(id);
+    if (b) b.style.background = '';
+  });
+}
+
 // ── 필터 옵션 초기화 ──────────────────────────────────
 function sd_initFilters() {
   const camps = DB.camp || [];
@@ -3759,11 +3970,11 @@ function renderSalesDash() {
   // 필터 옵션 업데이트
   sd_initFilters();
 
-  // 기간 기본값 (최초 조회 시 12개월)
+  // 기간 기본값 (최초 조회 시 이번 달 1일 ~ 말일)
   const fromEl = document.getElementById('sd-from');
   const toEl   = document.getElementById('sd-to');
   if (!fromEl.value && !toEl.value) {
-    sd_setRange(12, document.getElementById('sd-q12'));
+    sd_setThisMonth();
   }
   if (!fromEl.value || !toEl.value) {
     if (btn) { btn.disabled=false; btn.style.opacity='1'; }
