@@ -885,11 +885,11 @@ body:has(#auth-screen:not(.hidden)) .app {
 
 
 <!-- ══════════════════ UPLOAD ══════════════════ -->
-<!-- ══════════════════ 영업 성과 분석 (v10) ══════════════════ -->
+<!-- ══════════════════ 영업 성과 분석 (v11) ══════════════════ -->
 <div id="tab-sales-perf" class="panel">
   <div style="background:var(--bg);border:0.5px solid var(--bd);border-radius:var(--rl);padding:14px 16px">
     <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:2px">📈 영업 성과 분석</div>
-    <div style="font-size:11px;color:var(--tx3);margin-bottom:14px">회원가입DB · 캠페인DB 기반 — 신규/누적 가입자, 매출 전환율, 첫거래 이후 지속(재거래) 매출</div>
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:14px">회원가입DB · 캠페인DB 기반 — 국가·영업담당자별 월/분기/년 가입 성과, 신규/누적, 매출 전환·재거래 (v11)</div>
     <div id="sp-body"></div>
   </div>
 </div>
@@ -4672,11 +4672,12 @@ function _closeAllGroups() {
 //  매출 기준: 결제요청 '예' 캠페인의 (실행) 전체매출(VAT 포함)
 //  광고주 매칭: 회원 '회사' ↔ 캠페인 '법인명' 정규화(sl_normCompany)
 // ══════════════════════════════════════════════════════
-const _spState = { gran: 'month', rep: '', sortB: { col:'signups', dir:-1 } };
+const _spState = { gran: 'month', rep: '', country: '', sortB: { col:'signups', dir:-1 } };
 const sp_esc = (x) => String(x==null?'':x).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
 
 function sp_setGran(g){ _spState.gran = g; renderSalesPerf(); }
 function sp_setRep(v){ _spState.rep = v; renderSalesPerf(); }
+function sp_setCountry(v){ _spState.country = v; renderSalesPerf(); }
 function sp_sortB(col){
   const s = _spState.sortB;
   if (s.col === col) s.dir *= -1;
@@ -4712,11 +4713,13 @@ function sp_weekKey(ds){
 function sp_periodKey(ds, gran){
   if (!ds) return '';
   if (gran === 'year') return ds.slice(0,4);
+  if (gran === 'quarter'){ const y=ds.slice(0,4); const mo=parseInt(ds.slice(5,7),10)||1; return y+'-Q'+(Math.floor((mo-1)/3)+1); }
   if (gran === 'week') return sp_weekKey(ds);
   return ds.slice(0,7);
 }
 function sp_periodLabel(key, gran){
   if (gran === 'year') return key + '년';
+  if (gran === 'quarter') return key.replace('-Q', ' Q');
   if (gran === 'week') return key.replace('-W', ' W');
   const [y,mo] = key.split('-'); return `${y}.${mo}`;
 }
@@ -4728,8 +4731,10 @@ function sp_buildCorpMap(){
     const nm = c.corpName || c.company || '';
     const k = sl_normCompany(nm);
     if (!k) return;
-    if (!map[k]) map[k] = { name: nm, reps: {}, camps: [] };
+    if (!map[k]) map[k] = { name: nm, reps: {}, camps: [], country: '' };
     map[k].camps.push({ date: sd_date(c), rev: sd_vatIncl(c, 'execTotalAmount') });
+    const co = (c.advertiserCountry || '').trim();
+    if (co && !map[k].country) map[k].country = co;
     const sm = (c.salesManager || '').trim();
     if (sm) map[k].reps[sm] = (map[k].reps[sm] || 0) + 1;
   });
@@ -4743,6 +4748,14 @@ function sp_buildCorpMap(){
     o.repeat   = o.count >= 2;
   });
   return map;
+}
+
+// 회원 → 국가 추론 (회사 ↔ 캠페인 법인명 매칭, 없으면 '미분류')
+function sp_memberCountry(m, corpMap){
+  const k = sl_normCompany(m.company || '');
+  const o = k ? corpMap[k] : null;
+  const co = o && o.country ? o.country : '';
+  return (co === '한국' || co === '일본') ? co : '미분류';
 }
 
 function sp_kpi(label, val, sub, color){
@@ -4760,15 +4773,18 @@ function renderSalesPerf(){
   const repF = _spState.rep;
 
   // ── 데이터 준비 ──────────────────────────────────────
+  const corpMap = sp_buildCorpMap();
   const allMembers = (DB.member || [])
-    .map(m => ({ ...m, _d: sp_parseDate(m.joinDate), _rep: (m.rep||'').trim() }))
+    .map(m => ({ ...m, _d: sp_parseDate(m.joinDate), _rep: (m.rep||'').trim(), _country: sp_memberCountry(m, corpMap) }))
     .filter(m => m._d);
   const repSet = new Set();
   allMembers.forEach(m => { if (m._rep) repSet.add(m._rep); });
   const reps = [...repSet].sort((a,b) => a.localeCompare(b,'ko'));
 
-  const members = repF ? allMembers.filter(m => m._rep === repF) : allMembers;
-  const corpMap = sp_buildCorpMap();
+  const countryF = _spState.country;
+  let members = allMembers;
+  if (repF) members = members.filter(m => m._rep === repF);
+  if (countryF) members = members.filter(m => m._country === countryF);
 
   // ── 데이터 없음 안내 ────────────────────────────────
   if (allMembers.length === 0) {
@@ -4782,18 +4798,23 @@ function renderSalesPerf(){
     background:${gran===g?'var(--lead-tx)':'var(--bg2)'};color:${gran===g?'#fff':'var(--tx2)'}">${l}</button>`;
   const repOpts = `<option value="">전체 담당자</option>` +
     reps.map(r => `<option value="${sp_esc(r)}"${r===repF?' selected':''}>${sp_esc(r)}</option>`).join('');
+  const coOpts = ['','한국','일본','미분류'].map(c => `<option value="${c}"${c===countryF?' selected':''}>${c||'전체 국가'}</option>`).join('');
 
   const controls = `
   <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px">
     <div style="display:flex;align-items:center;gap:6px">
       <span style="font-size:11px;font-weight:600;color:var(--tx2)">기간 단위</span>
-      ${granBtn('week','주')}${granBtn('month','월')}${granBtn('year','년')}
+      ${granBtn('week','주')}${granBtn('month','월')}${granBtn('quarter','분기')}${granBtn('year','년')}
     </div>
     <div style="display:flex;align-items:center;gap:6px">
       <span style="font-size:11px;font-weight:600;color:var(--tx2)">영업담당자</span>
       <select onchange="sp_setRep(this.value)" style="font-size:11px;padding:5px 8px;min-width:130px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg2);color:var(--tx);cursor:pointer">${repOpts}</select>
     </div>
-    <span style="font-size:10px;color:var(--tx3)">매출 기준: 결제요청 '예' 캠페인의 (실행) 전체매출(VAT 포함) · 광고주 매칭: 회사명↔법인명</span>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font-size:11px;font-weight:600;color:var(--tx2)">국가</span>
+      <select onchange="sp_setCountry(this.value)" style="font-size:11px;padding:5px 8px;min-width:110px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg2);color:var(--tx);cursor:pointer">${coOpts}</select>
+    </div>
+    <span style="font-size:10px;color:var(--tx3)">국가는 캠페인 법인명 매칭으로 추론 · 매출: 결제 '예' 캠페인 (실행) 전체매출(VAT 포함)</span>
   </div>`;
 
   // ════════════════════════════════════════════════════
@@ -5054,7 +5075,153 @@ function renderSalesPerf(){
     <div style="font-size:10px;color:var(--tx3);margin-top:10px">※ '컨택' 단계는 리드DB(영업담당자)에서 집계되며, 회원가입DB와 담당자명이 다르면 비율이 부정확할 수 있습니다. 가입→매출 전환부터는 회사명↔법인명 매칭 기준입니다.</div>
   </div>`;
 
-  body.innerHTML = controls + sectionA + sectionB + sectionC;
+
+  // ════════════════════════════════════════════════════
+  //  Section 국가 — 국가별 가입 성과 (v11)
+  // ════════════════════════════════════════════════════
+  const CO_DEF = [
+    { key:'한국', color:'#2563eb', flag:'🇰🇷' },
+    { key:'일본', color:'#dc2626', flag:'🇯🇵' },
+    { key:'미분류', color:'#94a3b8', flag:'❓' },
+  ];
+  const matCap = gran==='year'?20 : gran==='quarter'?10 : gran==='week'?16 : 14;
+  const coCount = { '한국':0, '일본':0, '미분류':0 };
+  members.forEach(m => { coCount[m._country] = (coCount[m._country]||0) + 1; });
+  const coTotal = members.length || 1;
+  const coPeriod = {};
+  members.forEach(m => {
+    const k = sp_periodKey(m._d, gran);
+    if (!coPeriod[k]) coPeriod[k] = { '한국':0,'일본':0,'미분류':0 };
+    coPeriod[k][m._country]++;
+  });
+  const coPK = Object.keys(coPeriod).sort();
+  const coView = coPK.slice(-matCap);
+  const coMaxStack = Math.max(...coView.map(k => coPeriod[k]['한국']+coPeriod[k]['일본']+coPeriod[k]['미분류']), 1);
+  const CW = Math.max(coView.length * 48, 320), CH = 190, cpadB = 30, cpadT = 12;
+  const cbarW = Math.min(28, (CW/Math.max(coView.length,1))*0.55);
+  const cxAt = i => 10 + ((CW-20)/Math.max(coView.length,1))*(i+0.5);
+  const coBars = coView.map((k,i) => {
+    const x = cxAt(i);
+    let yAcc = CH - cpadB;
+    let seg = '';
+    CO_DEF.forEach(c => {
+      const v = coPeriod[k][c.key];
+      if (v<=0) return;
+      const h = (v/coMaxStack)*(CH-cpadB-cpadT);
+      yAcc -= h;
+      seg += `<rect x="${x-cbarW/2}" y="${yAcc}" width="${cbarW}" height="${h}" fill="${c.color}" opacity="0.9"><title>${sp_periodLabel(k,gran)} ${c.key} ${v}명</title></rect>`;
+    });
+    const tot = coPeriod[k]['한국']+coPeriod[k]['일본']+coPeriod[k]['미분류'];
+    return seg +
+      `<text x="${x}" y="${yAcc-3}" text-anchor="middle" font-size="9" fill="var(--tx2)">${tot}</text>` +
+      `<text x="${x}" y="${CH-cpadB+13}" text-anchor="middle" font-size="8" fill="var(--tx3)">${sp_periodLabel(k,gran)}</text>`;
+  }).join('');
+  const coChart = `<svg viewBox="0 0 ${CW} ${CH}" width="100%" height="${CH}" preserveAspectRatio="xMinYMid meet" style="max-width:100%">${coBars}</svg>`;
+  const coKpiCards = CO_DEF.map(c =>
+    sp_kpi(`${c.flag} ${c.key} 가입`, coCount[c.key]+'명', Math.round(coCount[c.key]/coTotal*100)+'%', c.color)
+  ).join('');
+  const coTableRows = [...coView].reverse().map(k => {
+    const r = coPeriod[k];
+    const t = r['한국']+r['일본']+r['미분류'];
+    return `<tr style="border-bottom:1px solid var(--bd)">
+      <td style="padding:6px 10px;font-weight:500">${sp_periodLabel(k,gran)}</td>
+      <td style="padding:6px 10px;text-align:right;color:#2563eb">${r['한국']||''}</td>
+      <td style="padding:6px 10px;text-align:right;color:#dc2626">${r['일본']||''}</td>
+      <td style="padding:6px 10px;text-align:right;color:#94a3b8">${r['미분류']||''}</td>
+      <td style="padding:6px 10px;text-align:right;font-weight:700">${t}</td>
+    </tr>`;
+  }).join('');
+  const sectionCountry = `
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-title" style="margin-bottom:4px">🌏 국가별 가입 성과${repF?` · <span style="color:var(--lead-tx)">${sp_esc(repF)}</span>`:''}${countryF?` · <span style="color:var(--lead-tx)">${sp_esc(countryF)}</span>`:''}</div>
+    <div style="font-size:10px;color:var(--tx3);margin-bottom:10px">국가는 회원 '회사' ↔ 캠페인 '법인명' 매칭으로 추론 (캠페인 이력 없으면 '미분류'). 막대=기간별 국가 누적, 위 숫자=합계.</div>
+    <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">${coKpiCards}</div>
+    <div style="display:flex;gap:14px;font-size:11px;margin-bottom:8px;flex-wrap:wrap">
+      <span><span style="display:inline-block;width:9px;height:9px;background:#2563eb;border-radius:2px;margin-right:4px"></span>한국</span>
+      <span><span style="display:inline-block;width:9px;height:9px;background:#dc2626;border-radius:2px;margin-right:4px"></span>일본</span>
+      <span><span style="display:inline-block;width:9px;height:9px;background:#94a3b8;border-radius:2px;margin-right:4px"></span>미분류</span>
+    </div>
+    <div style="overflow-x:auto;border:1px solid var(--bd);border-radius:var(--r);padding:6px 4px;margin-bottom:12px">${coChart}</div>
+    <div style="overflow:auto;max-height:260px;border:1px solid var(--bd);border-radius:var(--r)">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead style="position:sticky;top:0;background:var(--bg2);z-index:1">
+          <tr style="border-bottom:1px solid var(--bd)">
+            <th style="padding:7px 10px;text-align:left;color:var(--tx2)">기간</th>
+            <th style="padding:7px 10px;text-align:right;color:#2563eb">🇰🇷 한국</th>
+            <th style="padding:7px 10px;text-align:right;color:#dc2626">🇯🇵 일본</th>
+            <th style="padding:7px 10px;text-align:right;color:#94a3b8">미분류</th>
+            <th style="padding:7px 10px;text-align:right;color:var(--tx2)">계</th>
+          </tr>
+        </thead>
+        <tbody>${coTableRows || '<tr><td colspan="5" style="padding:14px;text-align:center;color:var(--tx3)">데이터 없음</td></tr>'}</tbody>
+      </table>
+    </div>
+  </div>`;
+
+  // ════════════════════════════════════════════════════
+  //  Section 매트릭스 — 영업담당자 × 기간 가입 (v11)
+  // ════════════════════════════════════════════════════
+  const matAgg = {};
+  members.forEach(m => {
+    const rep = m._rep || '(미지정)';
+    const pk = sp_periodKey(m._d, gran);
+    if (!matAgg[rep]) matAgg[rep] = { _total:0 };
+    matAgg[rep][pk] = (matAgg[rep][pk]||0) + 1;
+    matAgg[rep]._total++;
+  });
+  const matPKset = new Set();
+  members.forEach(m => matPKset.add(sp_periodKey(m._d, gran)));
+  const matView = [...matPKset].sort().slice(-matCap);
+  let matRows = Object.entries(matAgg).map(([rep,o]) => ({ rep, cells:o, total:o._total }));
+  matRows.sort((a,b) => b.total - a.total);
+  const grandTotal = matRows.reduce((sm,r)=>sm+r.total,0) || 1;
+  const colTotals = {}; matView.forEach(pk => colTotals[pk] = matRows.reduce((sm,r)=>sm+(r.cells[pk]||0),0));
+  const cellVals = matRows.flatMap(r => matView.map(pk => r.cells[pk]||0));
+  const cellMax = Math.max(1, ...cellVals);
+  const heat = v => v<=0 ? '' : `background:rgba(186,117,23,${(0.10 + 0.55*(v/cellMax)).toFixed(3)})`;
+  const matHead = matView.map(pk => `<th style="padding:6px 8px;text-align:right;color:var(--tx2);white-space:nowrap">${sp_periodLabel(pk,gran)}</th>`).join('');
+  const matBody = matRows.map(r => {
+    const cells = matView.map(pk => {
+      const v = r.cells[pk]||0;
+      return `<td style="padding:5px 8px;text-align:right;${heat(v)}">${v||''}</td>`;
+    }).join('');
+    return `<tr style="border-bottom:1px solid var(--bd)">
+      <td style="padding:5px 9px;font-weight:600;white-space:nowrap;position:sticky;left:0;background:var(--bg)">${sp_esc(r.rep)}</td>
+      ${cells}
+      <td style="padding:5px 9px;text-align:right;font-weight:700">${r.total}</td>
+      <td style="padding:5px 9px;text-align:right;color:var(--tx2)">${Math.round(r.total/grandTotal*100)}%</td>
+    </tr>`;
+  }).join('');
+  const matFoot = matView.map(pk => `<td style="padding:6px 8px;text-align:right;font-weight:700">${colTotals[pk]||''}</td>`).join('');
+  const granName = gran==='year'?'년':gran==='quarter'?'분기':gran==='week'?'주':'월';
+  const sectionMatrix = `
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-title" style="margin-bottom:4px">🧑‍💼 영업담당자 × 기간 가입 매트릭스${countryF?` · <span style="color:var(--lead-tx)">${sp_esc(countryF)}</span>`:''}</div>
+    <div style="font-size:10px;color:var(--tx3);margin-bottom:10px">행=영업담당자, 열=${granName} · 셀=신규 가입자 수 (색이 진할수록 많음). 최근 ${matView.length}개 ${granName} 표시. 담당자 기준 내림차순.</div>
+    <div style="overflow:auto;max-height:460px;border:1px solid var(--bd);border-radius:var(--r)">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;min-width:${Math.max(420, 150 + matView.length*52)}px">
+        <thead style="position:sticky;top:0;background:var(--bg2);z-index:2">
+          <tr style="border-bottom:1px solid var(--bd)">
+            <th style="padding:6px 9px;text-align:left;color:var(--tx2);position:sticky;left:0;background:var(--bg2);z-index:3">영업담당자</th>
+            ${matHead}
+            <th style="padding:6px 9px;text-align:right;color:var(--tx2)">합계</th>
+            <th style="padding:6px 9px;text-align:right;color:var(--tx2)">비중</th>
+          </tr>
+        </thead>
+        <tbody>${matBody || `<tr><td colspan="${matView.length+3}" style="padding:14px;text-align:center;color:var(--tx3)">데이터 없음</td></tr>`}</tbody>
+        <tfoot>
+          <tr style="border-top:2px solid var(--bd2);background:var(--bg2);font-weight:700">
+            <td style="padding:6px 9px;position:sticky;left:0;background:var(--bg2)">합계</td>
+            ${matFoot}
+            <td style="padding:6px 9px;text-align:right">${grandTotal}</td>
+            <td style="padding:6px 9px;text-align:right">100%</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>`;
+
+  body.innerHTML = controls + sectionCountry + sectionMatrix + sectionA + sectionB + sectionC;
 }
 
 function showTab(name){
