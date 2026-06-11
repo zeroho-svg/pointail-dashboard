@@ -316,6 +316,10 @@ th.cf-active{background:rgba(29,158,117,.15)!important}
   #tab-sales-dash .card{padding:10px!important}
   #tab-sales-dash table{font-size:11px!important}
   #tab-sales-dash td,#tab-sales-dash th{padding:4px 6px!important}
+  #tab-sales-perf .card{padding:10px!important}
+  #tab-sales-perf table{font-size:11px!important}
+  #tab-sales-perf td,#tab-sales-perf th{padding:4px 6px!important}
+  #tab-sales-perf [style*="grid-template-columns:1fr 1fr"]{grid-template-columns:1fr!important}
 
   /* ══ DB 조회 ══ */
   /* 필터 바 */
@@ -721,6 +725,7 @@ body:has(#auth-screen:not(.hidden)) .app {
     <!-- 메인: 대시보드 2개 -->
     <button class="tab active" id="tab-btn-dashboard" onclick="showTab('dashboard')">👥 영업 대시보드</button>
     <button class="tab" id="tab-btn-sales-dash" onclick="showTab('sales-dash')">📊 매출 대시보드</button>
+    <button class="tab" id="tab-btn-sales-perf" onclick="showTab('sales-perf')">📈 영업 성과 분석</button>
 
     <div style="width:1px;height:18px;background:var(--bd);margin:0 4px;flex-shrink:0"></div>
 
@@ -880,6 +885,15 @@ body:has(#auth-screen:not(.hidden)) .app {
 
 
 <!-- ══════════════════ UPLOAD ══════════════════ -->
+<!-- ══════════════════ 영업 성과 분석 (v10) ══════════════════ -->
+<div id="tab-sales-perf" class="panel">
+  <div style="background:var(--bg);border:0.5px solid var(--bd);border-radius:var(--rl);padding:14px 16px">
+    <div style="font-size:13px;font-weight:700;color:var(--tx);margin-bottom:2px">📈 영업 성과 분석</div>
+    <div style="font-size:11px;color:var(--tx3);margin-bottom:14px">회원가입DB · 캠페인DB 기반 — 신규/누적 가입자, 매출 전환율, 첫거래 이후 지속(재거래) 매출</div>
+    <div id="sp-body"></div>
+  </div>
+</div>
+
 <div id="tab-upload" class="panel">
   <div class="tip">각 DB를 독립적으로 업로드하세요. <strong>중복 행은 자동으로 제거</strong>되고 새로운 데이터만 누적 추가됩니다.<br>중복 기준: 리드DB → 회사명+리드확보일 / 회원가입DB → 회사명+가입일 / 캠페인DB → <strong>캠페인 번호</strong></div>
   <div class="grid3">
@@ -4652,13 +4666,404 @@ function _closeAllGroups() {
   _openGroup = null;
 }
 
+// ══════════════════════════════════════════════════════
+//  📈 영업 성과 분석 (v10) — 신규/누적 가입자 + 전환·지속매출
+//  데이터: 회원가입DB(DB.member) + 캠페인DB(DB.camp)
+//  매출 기준: 결제요청 '예' 캠페인의 (실행) 전체매출(VAT 포함)
+//  광고주 매칭: 회원 '회사' ↔ 캠페인 '법인명' 정규화(sl_normCompany)
+// ══════════════════════════════════════════════════════
+const _spState = { gran: 'month', rep: '', sortB: { col:'signups', dir:-1 } };
+const sp_esc = (x) => String(x==null?'':x).replace(/[<>&"]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;'}[c]));
+
+function sp_setGran(g){ _spState.gran = g; renderSalesPerf(); }
+function sp_setRep(v){ _spState.rep = v; renderSalesPerf(); }
+function sp_sortB(col){
+  const s = _spState.sortB;
+  if (s.col === col) s.dir *= -1;
+  else { s.col = col; s.dir = (col === 'rep') ? 1 : -1; }
+  renderSalesPerf();
+}
+
+// 날짜 파서 → 'YYYY-MM-DD' (실패 시 '')
+function sp_parseDate(raw){
+  if (raw === null || raw === undefined) return '';
+  let s = String(raw).trim();
+  if (!s) return '';
+  if (/^\d{5}$/.test(s)) { // 엑셀 시리얼
+    const d = new Date(Math.round((parseInt(s) - 25569) * 86400 * 1000));
+    return isNaN(d) ? '' : d.toISOString().slice(0,10);
+  }
+  s = s.replace(/[.\/]/g, '-').replace('T', ' ');
+  const m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (!m) return '';
+  return `${m[1]}-${m[2].padStart(2,'0')}-${m[3].padStart(2,'0')}`;
+}
+
+// ISO 주차 키 'YYYY-Www'
+function sp_weekKey(ds){
+  const [y,m,d] = ds.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m-1, d));
+  const day = dt.getUTCDay() || 7;
+  dt.setUTCDate(dt.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(dt.getUTCFullYear(), 0, 1));
+  const wk = Math.ceil((((dt - yearStart) / 86400000) + 1) / 7);
+  return `${dt.getUTCFullYear()}-W${String(wk).padStart(2,'0')}`;
+}
+function sp_periodKey(ds, gran){
+  if (!ds) return '';
+  if (gran === 'year') return ds.slice(0,4);
+  if (gran === 'week') return sp_weekKey(ds);
+  return ds.slice(0,7);
+}
+function sp_periodLabel(key, gran){
+  if (gran === 'year') return key + '년';
+  if (gran === 'week') return key.replace('-W', ' W');
+  const [y,mo] = key.split('-'); return `${y}.${mo}`;
+}
+
+// 캠페인DB → 정규화 법인명별 거래 집계
+function sp_buildCorpMap(){
+  const map = {};
+  (DB.camp || []).forEach(c => {
+    const nm = c.corpName || c.company || '';
+    const k = sl_normCompany(nm);
+    if (!k) return;
+    if (!map[k]) map[k] = { name: nm, reps: {}, camps: [] };
+    map[k].camps.push({ date: sd_date(c), rev: sd_vatIncl(c, 'execTotalAmount') });
+    const sm = (c.salesManager || '').trim();
+    if (sm) map[k].reps[sm] = (map[k].reps[sm] || 0) + 1;
+  });
+  Object.values(map).forEach(o => {
+    o.camps.sort((a,b) => (a.date||'').localeCompare(b.date||''));
+    o.count    = o.camps.length;
+    o.firstDate= o.camps[0] ? o.camps[0].date : '';
+    o.firstRev = o.camps[0] ? o.camps[0].rev : 0;
+    o.totalRev = o.camps.reduce((s,x) => s + x.rev, 0);
+    o.repeatRev= o.totalRev - o.firstRev;
+    o.repeat   = o.count >= 2;
+  });
+  return map;
+}
+
+function sp_kpi(label, val, sub, color){
+  return `<div style="flex:1;min-width:120px;background:var(--bg2);border:1px solid var(--bd);border-radius:var(--r);padding:11px 13px">
+    <div style="font-size:10px;color:var(--tx3);margin-bottom:4px">${label}</div>
+    <div style="font-size:20px;font-weight:700;color:${color||'var(--tx)'};line-height:1.1">${val}</div>
+    ${sub ? `<div style="font-size:10px;color:var(--tx2);margin-top:3px">${sub}</div>` : ''}
+  </div>`;
+}
+
+function renderSalesPerf(){
+  const body = document.getElementById('sp-body');
+  if (!body) return;
+  const gran = _spState.gran;
+  const repF = _spState.rep;
+
+  // ── 데이터 준비 ──────────────────────────────────────
+  const allMembers = (DB.member || [])
+    .map(m => ({ ...m, _d: sp_parseDate(m.joinDate), _rep: (m.rep||'').trim() }))
+    .filter(m => m._d);
+  const repSet = new Set();
+  allMembers.forEach(m => { if (m._rep) repSet.add(m._rep); });
+  const reps = [...repSet].sort((a,b) => a.localeCompare(b,'ko'));
+
+  const members = repF ? allMembers.filter(m => m._rep === repF) : allMembers;
+  const corpMap = sp_buildCorpMap();
+
+  // ── 데이터 없음 안내 ────────────────────────────────
+  if (allMembers.length === 0) {
+    body.innerHTML = `<div style="padding:40px;text-align:center;color:var(--tx3);font-size:13px">
+      회원가입DB 데이터가 없습니다. 상단 <strong>구글 시트 동기화</strong> 또는 엑셀 업로드 후 다시 조회하세요.</div>`;
+    return;
+  }
+
+  // ── 컨트롤 바 ────────────────────────────────────────
+  const granBtn = (g,l) => `<button onclick="sp_setGran('${g}')" style="font-size:11px;padding:5px 12px;border:1px solid var(--bd2);border-radius:var(--r);cursor:pointer;font-weight:600;
+    background:${gran===g?'var(--lead-tx)':'var(--bg2)'};color:${gran===g?'#fff':'var(--tx2)'}">${l}</button>`;
+  const repOpts = `<option value="">전체 담당자</option>` +
+    reps.map(r => `<option value="${sp_esc(r)}"${r===repF?' selected':''}>${sp_esc(r)}</option>`).join('');
+
+  const controls = `
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:14px">
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font-size:11px;font-weight:600;color:var(--tx2)">기간 단위</span>
+      ${granBtn('week','주')}${granBtn('month','월')}${granBtn('year','년')}
+    </div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <span style="font-size:11px;font-weight:600;color:var(--tx2)">영업담당자</span>
+      <select onchange="sp_setRep(this.value)" style="font-size:11px;padding:5px 8px;min-width:130px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg2);color:var(--tx);cursor:pointer">${repOpts}</select>
+    </div>
+    <span style="font-size:10px;color:var(--tx3)">매출 기준: 결제요청 '예' 캠페인의 (실행) 전체매출(VAT 포함) · 광고주 매칭: 회사명↔법인명</span>
+  </div>`;
+
+  // ════════════════════════════════════════════════════
+  //  Section A — 신규/누적 가입자 추이
+  // ════════════════════════════════════════════════════
+  const periodMap = {}; // key → count
+  members.forEach(m => { const k = sp_periodKey(m._d, gran); periodMap[k] = (periodMap[k]||0) + 1; });
+  const periodKeys = Object.keys(periodMap).sort();
+  let cum = 0;
+  const series = periodKeys.map(k => { cum += periodMap[k]; return { key:k, label:sp_periodLabel(k,gran), nw:periodMap[k], cum }; });
+  const totalSignups = members.length;
+
+  // 콤보 차트 (최근 18개 기간)
+  const view = series.slice(-18);
+  const maxNew = Math.max(...view.map(s => s.nw), 1);
+  const maxCum = Math.max(...view.map(s => s.cum), 1);
+  const W = Math.max(view.length * 46, 320), H = 200, padB = 34, padT = 14;
+  const barW = Math.min(26, (W / view.length) * 0.5);
+  const chW = W - 20;
+  const xAt = i => 10 + (chW / view.length) * (i + 0.5);
+  const yBar = v => (H - padB) - (v / maxNew) * (H - padB - padT);
+  const yLine = v => (H - padB) - (v / maxCum) * (H - padB - padT);
+  const bars = view.map((s,i) => {
+    const x = xAt(i), y = yBar(s.nw), h = (H - padB) - y;
+    return `<rect x="${x-barW/2}" y="${y}" width="${barW}" height="${Math.max(h,0)}" rx="2" fill="#BA7517" opacity="0.85"/>
+      <text x="${x}" y="${y-3}" text-anchor="middle" font-size="9" fill="var(--tx2)">${s.nw}</text>
+      <text x="${x}" y="${H-padB+13}" text-anchor="middle" font-size="8" fill="var(--tx3)">${s.label}</text>`;
+  }).join('');
+  const linePts = view.map((s,i) => `${xAt(i)},${yLine(s.cum)}`).join(' ');
+  const lineDots = view.map((s,i) => `<circle cx="${xAt(i)}" cy="${yLine(s.cum)}" r="2.5" fill="#2980b9"/>`).join('');
+  const chart = `<svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" preserveAspectRatio="xMinYMid meet" style="max-width:100%">
+    <polyline points="${linePts}" fill="none" stroke="#2980b9" stroke-width="2"/>
+    ${lineDots}${bars}</svg>`;
+
+  // 피벗 테이블 (최신순)
+  const pivotRows = [...series].reverse().map(s => `<tr>
+    <td style="padding:6px 10px;font-weight:500">${s.label}</td>
+    <td style="padding:6px 10px;text-align:right;color:#BA7517;font-weight:600">+${s.nw}</td>
+    <td style="padding:6px 10px;text-align:right;color:#2980b9;font-weight:700">${s.cum}</td>
+  </tr>`).join('');
+
+  const sectionA = `
+  <div class="card" style="margin-bottom:14px">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+      <div class="card-title" style="margin:0">📈 신규 / 누적 가입자 추이${repF?` · <span style="color:var(--lead-tx)">${sp_esc(repF)}</span>`:''}</div>
+      <div style="display:flex;gap:14px;font-size:11px">
+        <span><span style="display:inline-block;width:9px;height:9px;background:#BA7517;border-radius:2px;margin-right:4px"></span>신규</span>
+        <span><span style="display:inline-block;width:9px;height:9px;background:#2980b9;border-radius:50%;margin-right:4px"></span>누적</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      ${sp_kpi('총 가입자', totalSignups + '명', repF?sp_esc(repF)+' 누적':'전체 누적')}
+      ${sp_kpi('기간 수', series.length + '개', sp_periodLabel(periodKeys[0]||'',gran) + ' ~ ' + sp_periodLabel(periodKeys[periodKeys.length-1]||'',gran))}
+      ${sp_kpi('기간 평균 신규', (series.length?Math.round(totalSignups/series.length*10)/10:0) + '명', gran==='week'?'주당':gran==='year'?'연간':'월당')}
+    </div>
+    <div style="overflow-x:auto;border:1px solid var(--bd);border-radius:var(--r);padding:6px 4px;margin-bottom:12px">${chart}</div>
+    <div style="overflow:auto;max-height:300px;border:1px solid var(--bd);border-radius:var(--r)">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead style="position:sticky;top:0;background:var(--bg2);z-index:1">
+          <tr style="border-bottom:1px solid var(--bd)">
+            <th style="padding:7px 10px;text-align:left;color:var(--tx2)">기간</th>
+            <th style="padding:7px 10px;text-align:right;color:var(--tx2)">신규 가입</th>
+            <th style="padding:7px 10px;text-align:right;color:var(--tx2)">누적 가입</th>
+          </tr>
+        </thead>
+        <tbody>${pivotRows || '<tr><td colspan="3" style="padding:14px;text-align:center;color:var(--tx3)">데이터 없음</td></tr>'}</tbody>
+      </table>
+    </div>
+  </div>`;
+
+  // ════════════════════════════════════════════════════
+  //  Section B — 영업담당자별 모집·전환 성과
+  // ════════════════════════════════════════════════════
+  // 리드(컨택) 카운트
+  const leadByRep = {};
+  (DB.lead || []).forEach(l => { const r=(l.rep||'').trim(); if(r) leadByRep[r]=(leadByRep[r]||0)+1; });
+
+  // 담당자별 집계
+  const repAgg = {}; // rep → {...}
+  const ensure = r => repAgg[r] || (repAgg[r] = { rep:r, contacts:leadByRep[r]||0, signups:0, corps:{}, });
+  allMembers.forEach(m => {
+    const r = m._rep || '(미지정)';
+    const a = ensure(r);
+    a.signups++;
+    const ck = sl_normCompany(m.company || '');
+    if (ck && !a.corps[ck]) a.corps[ck] = true;
+  });
+  // 담당자 행 계산
+  let rowsB = Object.values(repAgg).map(a => {
+    let converted=0, newCorp=0, repeatCorp=0, firstRev=0, repeatRev=0, totalRev=0;
+    Object.keys(a.corps).forEach(ck => {
+      const o = corpMap[ck];
+      if (!o) return;
+      converted++;
+      if (o.repeat) repeatCorp++; else newCorp++;
+      firstRev += o.firstRev; repeatRev += o.repeatRev; totalRev += o.totalRev;
+    });
+    const signupCorps = Object.keys(a.corps).length;
+    return {
+      rep:a.rep, contacts:a.contacts, signups:a.signups, signupCorps,
+      converted, convRate: signupCorps ? converted/signupCorps : 0,
+      newCorp, repeatCorp, firstRev, repeatRev, totalRev,
+    };
+  });
+  // 합계
+  const totB = rowsB.reduce((t,r)=>{
+    ['contacts','signups','signupCorps','converted','newCorp','repeatCorp','firstRev','repeatRev','totalRev'].forEach(k=>t[k]+=r[k]);
+    return t;
+  }, {contacts:0,signups:0,signupCorps:0,converted:0,newCorp:0,repeatCorp:0,firstRev:0,repeatRev:0,totalRev:0});
+  totB.convRate = totB.signupCorps ? totB.converted/totB.signupCorps : 0;
+
+  // 정렬
+  const sb = _spState.sortB;
+  rowsB.sort((x,y) => {
+    let r;
+    if (sb.col === 'rep') r = String(x.rep).localeCompare(String(y.rep),'ko');
+    else r = (x[sb.col]||0) - (y[sb.col]||0);
+    return r * sb.dir;
+  });
+  const arrowB = c => sb.col===c ? (sb.dir>0?' ▲':' ▼') : ' ⇅';
+  const thB = (c,l,al) => `<th onclick="sp_sortB('${c}')" style="padding:7px 9px;text-align:${al};color:var(--tx2);cursor:pointer;white-space:nowrap;user-select:none">${l}<span style="font-size:8px;color:var(--tx3)">${arrowB(c)}</span></th>`;
+  const pct = v => Math.round(v*100);
+  const convColor = v => v>=0.5?'#16a085':v>=0.25?'#BA7517':'var(--tx2)';
+
+  const bodyRowsB = rowsB.map(r => `<tr style="border-bottom:1px solid var(--bd)">
+    <td style="padding:7px 9px;font-weight:600">${sp_esc(r.rep)}</td>
+    <td style="padding:7px 9px;text-align:right;color:var(--tx2)">${r.contacts||'-'}</td>
+    <td style="padding:7px 9px;text-align:right;font-weight:600">${r.signups}</td>
+    <td style="padding:7px 9px;text-align:right;color:#16a085;font-weight:600">${r.converted}</td>
+    <td style="padding:7px 9px;text-align:right;font-weight:700;color:${convColor(r.convRate)}">${pct(r.convRate)}%</td>
+    <td style="padding:7px 9px;text-align:right">${r.newCorp}</td>
+    <td style="padding:7px 9px;text-align:right;color:#2980b9;font-weight:600">${r.repeatCorp}</td>
+    <td style="padding:7px 9px;text-align:right;color:var(--tx2)">${sd_fmtN(r.firstRev)}</td>
+    <td style="padding:7px 9px;text-align:right;color:#8e44ad;font-weight:600">${sd_fmtN(r.repeatRev)}</td>
+    <td style="padding:7px 9px;text-align:right;font-weight:700">${sd_fmtN(r.totalRev)}</td>
+  </tr>`).join('');
+
+  const sectionB = `
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-title" style="margin-bottom:4px">🧑‍💼 영업담당자별 모집 · 전환 성과</div>
+    <div style="font-size:10px;color:var(--tx3);margin-bottom:10px">컨택(리드) → 회원가입 → 매출 전환 → 첫거래/재거래 매출까지. 전환율 = 매출전환 광고주 ÷ 가입 광고주(회사 기준).</div>
+    <div style="overflow:auto;border:1px solid var(--bd);border-radius:var(--r)">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead style="background:var(--bg2)">
+          <tr style="border-bottom:1px solid var(--bd)">
+            ${thB('rep','영업담당자','left')}
+            ${thB('contacts','컨택(리드)','right')}
+            ${thB('signups','가입자','right')}
+            ${thB('converted','전환 광고주','right')}
+            ${thB('convRate','전환율','right')}
+            ${thB('newCorp','신규(1회)','right')}
+            ${thB('repeatCorp','재거래(2회+)','right')}
+            ${thB('firstRev','첫거래 매출','right')}
+            ${thB('repeatRev','재거래 매출','right')}
+            ${thB('totalRev','총 실행매출','right')}
+          </tr>
+        </thead>
+        <tbody>${bodyRowsB || '<tr><td colspan="10" style="padding:14px;text-align:center;color:var(--tx3)">데이터 없음</td></tr>'}</tbody>
+        <tfoot>
+          <tr style="border-top:2px solid var(--bd2);background:var(--bg2);font-weight:700">
+            <td style="padding:8px 9px">합계</td>
+            <td style="padding:8px 9px;text-align:right">${totB.contacts||'-'}</td>
+            <td style="padding:8px 9px;text-align:right">${totB.signups}</td>
+            <td style="padding:8px 9px;text-align:right;color:#16a085">${totB.converted}</td>
+            <td style="padding:8px 9px;text-align:right;color:${convColor(totB.convRate)}">${pct(totB.convRate)}%</td>
+            <td style="padding:8px 9px;text-align:right">${totB.newCorp}</td>
+            <td style="padding:8px 9px;text-align:right;color:#2980b9">${totB.repeatCorp}</td>
+            <td style="padding:8px 9px;text-align:right">${sd_fmtN(totB.firstRev)}</td>
+            <td style="padding:8px 9px;text-align:right;color:#8e44ad">${sd_fmtN(totB.repeatRev)}</td>
+            <td style="padding:8px 9px;text-align:right">${sd_fmtN(totB.totalRev)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>`;
+
+  // ════════════════════════════════════════════════════
+  //  Section C — 전환 퍼널 & 지속(재거래) 매출
+  // ════════════════════════════════════════════════════
+  // 가입 회사(정규화) 집합 (rep 필터 반영)
+  const signupCorpSet = {};
+  members.forEach(m => { const ck = sl_normCompany(m.company||''); if(ck) signupCorpSet[ck]=true; });
+  const signupCorpKeys = Object.keys(signupCorpSet);
+  const convertedCorps = signupCorpKeys.filter(ck => corpMap[ck]);
+  const repeatCorps    = convertedCorps.filter(ck => corpMap[ck].repeat);
+
+  // 거래 횟수 분포 (전환된 광고주 중)
+  const dist = {1:0,2:0,'3+':0};
+  let firstRevC=0, repeatRevC=0, totalRevC=0, totalDeals=0;
+  convertedCorps.forEach(ck=>{
+    const o=corpMap[ck];
+    if(o.count===1) dist[1]++; else if(o.count===2) dist[2]++; else dist['3+']++;
+    firstRevC+=o.firstRev; repeatRevC+=o.repeatRev; totalRevC+=o.totalRev; totalDeals+=o.count;
+  });
+  const contactsC = repF ? (leadByRep[repF]||0) : (DB.lead||[]).filter(l=>(l.rep||'').trim()).length;
+  const fSign = members.length;
+  const fSignCorp = signupCorpKeys.length;
+  const fConv = convertedCorps.length;
+  const fRepeat = repeatCorps.length;
+
+  const stage = (label, val, sub, color, rate) => `
+    <div style="flex:1;min-width:130px;position:relative">
+      <div style="background:${color};color:#fff;border-radius:var(--r);padding:12px 14px;text-align:center">
+        <div style="font-size:11px;opacity:.9">${label}</div>
+        <div style="font-size:24px;font-weight:800;line-height:1.1;margin-top:2px">${val}</div>
+        ${sub?`<div style="font-size:10px;opacity:.85;margin-top:2px">${sub}</div>`:''}
+      </div>
+      ${rate!==null&&rate!==undefined?`<div style="text-align:center;font-size:11px;color:var(--tx2);margin-top:5px">↓ <strong>${rate}%</strong></div>`:''}
+    </div>`;
+
+  const rConvFromSignup = fSignCorp ? Math.round(fConv/fSignCorp*100) : 0;
+  const rRepeatFromConv = fConv ? Math.round(fRepeat/fConv*100) : 0;
+  const rSignFromContact = contactsC ? Math.round(fSignCorp/contactsC*100) : null;
+  const avgDeals = fConv ? Math.round(totalDeals/fConv*10)/10 : 0;
+  const repeatRevPct = totalRevC ? Math.round(repeatRevC/totalRevC*100) : 0;
+
+  const distMax = Math.max(dist[1],dist[2],dist['3+'],1);
+  const distBar = (l,v,c) => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+    <span style="font-size:11px;color:var(--tx2);width:44px">${l}</span>
+    <div style="flex:1;background:var(--bg2);border-radius:4px;height:18px;overflow:hidden"><div style="width:${v/distMax*100}%;height:100%;background:${c}"></div></div>
+    <span style="font-size:11px;font-weight:600;width:36px;text-align:right">${v}</span></div>`;
+
+  const sectionC = `
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-title" style="margin-bottom:10px">🔄 컨택 → 가입 → 첫거래 → 재거래 퍼널${repF?` · <span style="color:var(--lead-tx)">${sp_esc(repF)}</span>`:''}</div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-bottom:16px">
+      ${stage('컨택 (리드)', contactsC||'-', '리드DB 기준', '#7f8c8d', rSignFromContact)}
+      ${stage('회원가입 (회사)', fSignCorp, fSign+'개 계정', '#BA7517', rConvFromSignup)}
+      ${stage('첫 거래 (매출 전환)', fConv, '결제 캠페인 보유', '#16a085', rRepeatFromConv)}
+      ${stage('재거래 (지속)', fRepeat, '2회+ 거래', '#8e44ad', null)}
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+      ${sp_kpi('가입→매출 전환율', rConvFromSignup+'%', `${fConv} / ${fSignCorp} 광고주`, convColor(rConvFromSignup/100))}
+      ${sp_kpi('재거래율(리텐션)', rRepeatFromConv+'%', `${fRepeat} / ${fConv} 광고주`, '#8e44ad')}
+      ${sp_kpi('광고주당 평균 거래', avgDeals+'회', `총 ${totalDeals}건 거래`)}
+      ${sp_kpi('재거래 매출 비중', repeatRevPct+'%', `재거래 ${sd_fmtN(repeatRevC)}원`, '#8e44ad')}
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div style="border:1px solid var(--bd);border-radius:var(--r);padding:12px 14px">
+        <div style="font-size:11px;font-weight:600;color:var(--tx2);margin-bottom:10px">거래 횟수별 광고주 분포</div>
+        ${distBar('1회', dist[1], '#16a085')}
+        ${distBar('2회', dist[2], '#2980b9')}
+        ${distBar('3회+', dist['3+'], '#8e44ad')}
+      </div>
+      <div style="border:1px solid var(--bd);border-radius:var(--r);padding:12px 14px">
+        <div style="font-size:11px;font-weight:600;color:var(--tx2);margin-bottom:10px">매출 구성 (첫거래 vs 재거래)</div>
+        <div style="display:flex;height:22px;border-radius:5px;overflow:hidden;margin-bottom:8px">
+          <div style="width:${totalRevC?(firstRevC/totalRevC*100):50}%;background:#16a085"></div>
+          <div style="width:${totalRevC?(repeatRevC/totalRevC*100):50}%;background:#8e44ad"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--tx2)">
+          <span><span style="color:#16a085">●</span> 첫거래 ${sd_fmtN(firstRevC)}원</span>
+          <span><span style="color:#8e44ad">●</span> 재거래 ${sd_fmtN(repeatRevC)}원</span>
+        </div>
+        <div style="font-size:11px;color:var(--tx);margin-top:10px;font-weight:600">총 실행매출 ${sd_fmtN(totalRevC)}원</div>
+      </div>
+    </div>
+    <div style="font-size:10px;color:var(--tx3);margin-top:10px">※ '컨택' 단계는 리드DB(영업담당자)에서 집계되며, 회원가입DB와 담당자명이 다르면 비율이 부정확할 수 있습니다. 가입→매출 전환부터는 회사명↔법인명 매칭 기준입니다.</div>
+  </div>`;
+
+  body.innerHTML = controls + sectionA + sectionB + sectionC;
+}
+
 function showTab(name){
   // 패널 전환
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('tab-'+name).classList.add('active');
 
   // 메인 탭 활성화 (대시보드, 매출대시보드)
-  ['dashboard','sales-dash'].forEach(t => {
+  ['dashboard','sales-dash','sales-perf'].forEach(t => {
     const b = document.getElementById('tab-btn-'+t);
     if (b) b.classList.toggle('active', t===name);
   });
@@ -4687,6 +5092,7 @@ function showTab(name){
   // 렌더 함수 호출
   if(name==='dashboard') renderSalesDash2();
   if(name==='sales-dash') renderSalesDash();
+  if(name==='sales-perf') renderSalesPerf();
   if(name==='settings')  renderFieldBuilder();
   if(name==='rules')     renderRulesTab();
   if(name==='leads-t')   renderLeads();
