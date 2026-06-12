@@ -2825,6 +2825,23 @@ function renderMerged(){
 // ══════════════════════════════════════════════════════
 //  컬럼 필터 엔진 (구글 시트 스타일)
 // ══════════════════════════════════════════════════════
+// 날짜/일시 문자열 → 정렬용 타임스탬프 (파싱 실패 시 null)
+// 처리: 2026-04-14 / 2026.4.14 / 2026/4/14 / 2026-04-14 10:00:00 / 2026. 4. 14 오전 10:00:00
+function cfParseDateTime(v){
+  if (v === null || v === undefined) return null;
+  let s = String(v).trim();
+  if (!s) return null;
+  const isPM = /오후|PM/i.test(s), isAM = /오전|AM/i.test(s);
+  s = s.replace(/오전|오후|AM|PM/gi, ' ');
+  s = s.replace(/[.\/]/g, '-').replace(/\s+/g, ' ').trim();
+  s = s.replace(/-\s+/g, '-').replace(/\s+-/g, '-');
+  const m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (!m) { const t = Date.parse(String(v)); return isNaN(t) ? null : t; }
+  let hh = m[4] ? parseInt(m[4],10) : 0;
+  if (isPM && hh < 12) hh += 12;
+  if (isAM && hh === 12) hh = 0;
+  return Date.UTC(+m[1], (+m[2])-1, +m[3], hh, m[5]?+m[5]:0, m[6]?+m[6]:0);
+}
 const CF = {
   // 각 DB별 필터 상태: {dbType: {fieldId: {sort:'asc'|'desc'|null, checked:Set}}}
   state: {lead:{}, member:{}, camp:{}},
@@ -2991,9 +3008,13 @@ const CF = {
       'contractSalePrice','execMktAmount','execDiscount','execNetAmount','execTotalAmount',
       'memberNo',
     ]);
+    const _dateCols = new Set([
+      'recruitStartAt','createdAt','joinDate','leadDate','recentContactDate','applyDate',
+    ]);
     for (const [fieldId, fst] of Object.entries(st)) {
       if (fst && fst.sort) {
         const isNum = _numCols.has(fieldId);
+        const isDate = _dateCols.has(fieldId);
         result.sort((a, b) => {
           const av = a[fieldId] || '', bv = b[fieldId] || '';
           let cmp;
@@ -3002,6 +3023,13 @@ const CF = {
             const an = parseFloat(String(av).replace(/,/g,'')) || 0;
             const bn = parseFloat(String(bv).replace(/,/g,'')) || 0;
             cmp = an - bn;
+          } else if (isDate) {
+            // 날짜 비교: 타임스탬프로 변환 (빈값/파싱불가는 항상 맨 아래로)
+            const at = cfParseDateTime(av), bt = cfParseDateTime(bv);
+            if (at === null && bt === null) return 0;
+            if (at === null) return 1;   // a를 항상 뒤로
+            if (bt === null) return -1;  // b를 항상 뒤로
+            cmp = at - bt;
           } else {
             cmp = av.localeCompare(bv, 'ko');
           }
@@ -4417,7 +4445,7 @@ async function syncDbTab(type) {
       member: {'광고주 회원 번호':'memberNo','가입일자':'joinDate','아이디':'userId',
                '회원명':'memberName','회원명(후리가나)':'memberNameKana','휴대폰 번호':'phone',
                '가입 유형':'joinType','회사':'company','마케팅 수신 동의 여부':'marketingConsent',
-               '계정 상태':'accountStatus','영업 담당자':'rep'},
+               '계정 상태':'accountStatus','영업 담당자':'salesRep'},
       camp: {'캠페인 번호':'campaignNo','마케팅 서비스 유형':'marketingType','마케팅 번호':'marketingNo',
              '원본 캠페인 번호':'originalCampaignNo','캠페인 상태':'campaignStatus','결제 상태':'payStatus',
              '캠페인 유형':'campaignType','캠페인 제목':'campaignTitle','스토어명':'storeName',
@@ -4472,6 +4500,11 @@ async function syncDbTab(type) {
             if (!isNaN(num) && num > 0) { obj[col+'_orig'] = obj[col]; obj[col] = Math.round(num*10).toLocaleString('ko-KR'); }
           });
         }
+      }
+      if (type === 'member') {
+        // 영업 담당자: 테이블/스키마는 salesRep 사용, 일부 레거시 코드는 rep 참조 → 양쪽 모두 채움
+        obj.salesRep = obj.salesRep || obj.rep || '';
+        obj.rep = obj.salesRep;
       }
       return obj;
     });
