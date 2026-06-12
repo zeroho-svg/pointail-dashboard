@@ -4832,7 +4832,7 @@ function renderSalesPerf(){
   const repF = _spState.rep;
 
   const allMembers = (DB.member || [])
-    .map(m => ({ ...m, _d: sp_parseDate(m.joinDate), _rep: (m.rep||'').trim() }))
+    .map(m => ({ ...m, _d: sp_parseDate(m.joinDate), _rep: (m.salesRep || m.rep || m.salesManager || '').trim() }))
     .filter(m => m._d);
   const repSet = new Set();
   allMembers.forEach(m => { if (m._rep) repSet.add(m._rep); });
