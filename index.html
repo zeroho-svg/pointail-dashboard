@@ -4009,6 +4009,17 @@ function sd_kpiBox(label, value, sub, accent) {
   </div>`;
 }
 
+// ── 캠페인 유형 분류: 여러 컬럼을 스캔해 쇼핑/인플루언서/플레이스/리워드로 분류 ──
+// campaignType, marketingType, category, selectionType, campaignTitle 순으로 키워드 탐색
+function sd_classifyCampType(r) {
+  const fields = [r.campaignType, r.marketingType, r.category, r.selectionType, r.campaignTitle]
+    .map(x => String(x || ''));
+  for (const key of ['쇼핑','인플루언서','플레이스','리워드']) {
+    if (fields.some(f => f.includes(key))) return key;
+  }
+  return null;
+}
+
 // ── 캠페인 유형별 상세 KPI 그리드 ─────────────────────
 function sd_campTypeGrid(rows, color) {
   // 캠페인 유형 순서: 쇼핑 → 인플루언서 → 플레이스 → 리워드
@@ -4020,11 +4031,8 @@ function sd_campTypeGrid(rows, color) {
     { key: '리워드',    label: '리워드'    },
   ];
 
-  // 유형별 row 분리 (campaignType 우선, 없으면 marketingType)
-  const typedRows = key => rows.filter(r => {
-    const v = (r.campaignType || r.marketingType || '').trim();
-    return v === key || v.includes(key);
-  });
+  // 유형별 row 분리 (campaignType/marketingType/category/선정유형/제목 스캔, 단일 분류)
+  const typedRows = key => rows.filter(r => sd_classifyCampType(r) === key);
 
   // 전체 합계
   const execTotal = rows.reduce((a,r)=>a+sd_vatIncl(r,'execTotalAmount'),0);
@@ -4068,11 +4076,19 @@ function sd_campTypeGrid(rows, color) {
       background:${i===0?color+'18':'var(--bg3)'};border-radius:var(--r);text-align:center">${lb}</div>`).join('')}
   </div>`;
 
+  const matchedCount = rows.filter(r => sd_classifyCampType(r)).length;
+  const hint = (rows.length && matchedCount === 0)
+    ? `<div style="font-size:10px;color:#c0392b;margin-top:5px;line-height:1.4">⚠ 유형(쇼핑/인플루언서/플레이스/리워드)이 인식된 캠페인이 0건입니다.<br>캠페인DB의 '캠페인 유형' 또는 '마케팅 서비스 유형' 컬럼에 해당 값이 있는지 확인하세요.</div>`
+    : (matchedCount < rows.length
+        ? `<div style="font-size:9px;color:var(--tx3);margin-top:5px">유형 인식 ${matchedCount}/${rows.length}건 · 미인식분은 '전체'에만 포함</div>`
+        : '');
+
   return header
     + makeRow(lbl_cont_rev, row_cont_rev, color, 'rgba(0,0,0,.025)')
     + makeRow(lbl_cont_mkt, row_cont_mkt, '', 'rgba(0,0,0,.012)')
     + makeRow(lbl_exec_rev, row_exec_rev, '#c0392b', '')
-    + makeRow(lbl_exec_mkt, row_exec_mkt, '', 'rgba(192,57,43,.04)');
+    + makeRow(lbl_exec_mkt, row_exec_mkt, '', 'rgba(192,57,43,.04)')
+    + hint;
 }
 
 // ── 월별 차트 데이터 생성 ─────────────────────────────
