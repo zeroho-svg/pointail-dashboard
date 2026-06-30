@@ -5519,6 +5519,51 @@ function renderRepKpi(){
 }
 window.renderRepKpi=renderRepKpi; window.kpiOnHireChange=kpiOnHireChange; window.kpiSetRep=kpiSetRep; window.kpiSaveHire=kpiSaveHire;
 
+
+/* ════════ 영업 성과 분석 보드 (v1) — 좌측 필터 + 우측 대시보드 ════════ */
+window._spbF = window._spbF || {year:'',rep:'',ctype:'',country:'',channel:'',companyType:''};
+window._spbChart = window._spbChart || null;
+function spbMembers(){ try{ if(typeof DB!=='undefined'&&DB&&DB.member) return DB.member; }catch(e){} try{return (JSON.parse(localStorage.getItem('pt_db')||'{}').member)||[];}catch(e){return[];} }
+function spbOpts(field){ var s={}; _kpiCamp().forEach(function(r){var v=String(r[field]||'').trim(); if(v)s[v]=(s[v]||0)+1;}); return Object.keys(s).sort(function(a,b){return s[b]-s[a];}); }
+function spbYears(){ var s={}; _kpiCamp().forEach(function(r){var y=String(r.createdAt||'').slice(0,4); if(/^\d{4}$/.test(y))s[y]=1;}); return Object.keys(s).sort().reverse(); }
+function spbFiltered(){ var f=_spbF; return _kpiCamp().filter(function(r){
+  if(f.year && String(r.createdAt||'').slice(0,4)!==f.year) return false;
+  if(f.rep && String(r.salesManager||'').trim()!==f.rep) return false;
+  if(f.ctype && String(r.campaignType||'').trim()!==f.ctype) return false;
+  if(f.country && String(r.advertiserCountry||'').trim()!==f.country) return false;
+  if(f.channel && String(r.shoppingChannel||'').trim()!==f.channel) return false;
+  if(f.companyType && String(r.companyType||'').trim()!==f.companyType) return false;
+  return true; }); }
+function spbOnFilter(k,v){ _spbF[k]=v; renderSPBoard(); }
+function spbReset(){ _spbF={year:'',rep:'',ctype:'',country:'',channel:'',companyType:''}; renderSPBoard(); }
+function spbKpis(rows){ var contract=0,exec=0,mkt=0; rows.forEach(function(r){ contract+=kpiNum(r.contractFinal); exec+=kpiNum(r.execTotalAmount); mkt+=kpiNum(r.contractMktCost); }); var f=_spbF; var mem=spbMembers().filter(function(m){ if(f.year){ var y=(String(m.joinDate||'').match(/(\d{4})/)||[])[1]; if(y!==f.year) return false; } if(f.rep && String(m.salesRep||'').trim()!==f.rep) return false; return true; }); var users=mem.length; return {contract:contract,exec:exec,mkt:mkt,count:rows.length,users:users,arpu:users?contract/users:0}; }
+function spbMonthly(rows){ var m={}; rows.forEach(function(r){ var ym=String(r.createdAt||'').slice(0,7); if(!/^\d{4}-\d{2}$/.test(ym))return; var o=m[ym]=m[ym]||{rev:0,cnt:0}; o.rev+=kpiNum(r.contractFinal); o.cnt++; }); var keys=Object.keys(m).sort(); return {labels:keys, rev:keys.map(function(k){return m[k].rev;}), cnt:keys.map(function(k){return m[k].cnt;})}; }
+function spbGroup(rows, field){ var g={}; rows.forEach(function(r){ var v=String(r[field]||'').trim()||'(미지정)'; g[v]=(g[v]||0)+kpiNum(r.contractFinal); }); var arr=Object.keys(g).map(function(k){return {k:k,v:g[k]};}).sort(function(a,b){return b.v-a.v;}); var tot=arr.reduce(function(a,b){return a+b.v;},0)||1; return {arr:arr, tot:tot}; }
+function spbBars(title, grp, max){ var rows=grp.arr.slice(0,max||6).map(function(d){ var p=Math.round(d.v/grp.tot*100); return '<div style="margin-bottom:5px"><div style="display:flex;justify-content:space-between;font-size:11px;margin-bottom:2px"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:110px">'+d.k+'</span><span style="color:var(--tx3);flex-shrink:0">'+kpiShort(d.v)+' ('+p+'%)</span></div><div style="height:7px;background:var(--bg2);border-radius:4px;overflow:hidden"><div style="height:100%;width:'+p+'%;background:#2563eb"></div></div></div>'; }).join(''); return '<div style="background:var(--bg);border:0.5px solid var(--bd);border-radius:8px;padding:10px;flex:1;min-width:200px"><div style="font-size:12px;font-weight:700;margin-bottom:8px">'+title+'</div>'+(rows||'<div style="font-size:11px;color:var(--tx3)">데이터 없음</div>')+'</div>'; }
+function spbTopCorp(rows, n){ var g={}; rows.forEach(function(r){ var v=String(r.corpName||'').trim()||'(미지정)'; var o=g[v]=g[v]||{rev:0,cnt:0}; o.rev+=kpiNum(r.contractFinal); o.cnt++; }); return Object.keys(g).map(function(k){return {k:k,rev:g[k].rev,cnt:g[k].cnt};}).sort(function(a,b){return b.rev-a.rev;}).slice(0,n||10); }
+function spbSelect(label,key,opts){ var cur=_spbF[key]; var o='<option value="">전체</option>'+opts.map(function(v){return '<option value="'+v+'"'+(v===cur?' selected':'')+'>'+v+'</option>';}).join(''); return '<div style="margin-bottom:10px"><div style="font-size:10px;color:var(--tx2);font-weight:600;margin-bottom:3px">'+label+'</div><select onchange="spbOnFilter(\''+key+'\',this.value)" style="width:100%;font-size:12px;padding:5px 6px;border:0.5px solid var(--bd);border-radius:5px;background:var(--bg);color:var(--tx)">'+o+'</select></div>'; }
+function spbCard(label,val,accent){ return '<div style="flex:1;min-width:130px;background:var(--bg);border:0.5px solid var(--bd);border-radius:8px;padding:10px 12px"><div style="font-size:10px;color:var(--tx3);margin-bottom:3px">'+label+'</div><div style="font-size:19px;font-weight:800;color:'+(accent||'var(--tx)')+'">'+val+'</div></div>'; }
+function renderSPBoard(){
+  var body=document.getElementById('sp-body'); if(!body) return;
+  var rows=spbFiltered(); var k=spbKpis(rows); var f=_spbF;
+  var filters=spbSelect('연도','year',spbYears())+spbSelect('영업담당자','rep',spbOpts('salesManager'))+spbSelect('캠페인 유형','ctype',spbOpts('campaignType'))+spbSelect('국가','country',spbOpts('advertiserCountry'))+spbSelect('쇼핑채널','channel',spbOpts('shoppingChannel'))+spbSelect('회사유형','companyType',spbOpts('companyType'))+'<button onclick="spbReset()" style="width:100%;margin-top:4px;font-size:11px;padding:6px;border:0.5px solid var(--bd);border-radius:5px;background:var(--bg2);color:var(--tx);cursor:pointer">↺ 필터 초기화</button>';
+  var activeCount=Object.keys(f).filter(function(x){return f[x];}).length;
+  var left='<div style="width:190px;flex-shrink:0;background:var(--bg);border:0.5px solid var(--bd);border-radius:var(--rl);padding:12px;align-self:flex-start;position:sticky;top:8px"><div style="font-size:12px;font-weight:700;margin-bottom:10px">🔎 필터'+(activeCount?' <span style=\"font-size:10px;color:#2563eb\">('+activeCount+')</span>':'')+'</div>'+filters+'</div>';
+  var cards='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+spbCard('계약 매출',kpiShort(k.contract),'#2563eb')+spbCard('실행 매출',kpiShort(k.exec),'#16a34a')+spbCard('(계약) 마케팅',kpiShort(k.mkt))+spbCard('캠페인 수',k.count.toLocaleString('ko-KR')+'건')+spbCard('신규 가입',k.users.toLocaleString('ko-KR')+'명')+spbCard('ARPU',kpiShort(k.arpu))+'</div>';
+  var monthBox='<div style="background:var(--bg);border:0.5px solid var(--bd);border-radius:8px;padding:10px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;margin-bottom:8px">월별 추이 (계약매출·캠페인수)</div><canvas id="spb-month-chart" height="90"></canvas></div>';
+  var shares='<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">'+spbBars('캠페인 유형별 매출',spbGroup(rows,'campaignType'),5)+spbBars('국가별 매출',spbGroup(rows,'advertiserCountry'),4)+spbBars('쇼핑채널별 매출',spbGroup(rows,'shoppingChannel'),6)+'</div>';
+  var top=spbTopCorp(rows,10);
+  var topRows=top.map(function(d,i){return '<tr><td style="padding:4px 8px;font-size:11px;color:var(--tx3)">'+(i+1)+'</td><td style="padding:4px 8px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px">'+d.k+'</td><td style="padding:4px 8px;font-size:11px;text-align:right">'+kpiShort(d.rev)+'</td><td style="padding:4px 8px;font-size:11px;text-align:right;color:var(--tx3)">'+d.cnt+'건</td></tr>';}).join('');
+  var topBox='<div style="background:var(--bg);border:0.5px solid var(--bd);border-radius:8px;padding:10px;margin-bottom:12px"><div style="font-size:12px;font-weight:700;margin-bottom:8px">Top 10 광고주(법인) — 계약매출</div><table style="width:100%;border-collapse:collapse"><thead><tr style="font-size:10px;color:var(--tx2)"><th style="padding:4px 8px;text-align:left">#</th><th style="padding:4px 8px;text-align:left">법인명</th><th style="padding:4px 8px;text-align:right">계약매출</th><th style="padding:4px 8px;text-align:right">캠페인</th></tr></thead><tbody>'+(topRows||'<tr><td colspan="4" style="padding:14px;text-align:center;color:var(--tx3);font-size:11px">데이터 없음</td></tr>')+'</tbody></table></div>';
+  var right='<div style="flex:1;min-width:0">'+cards+monthBox+shares+topBox+'<div id="repkpi-body"></div></div>';
+  body.innerHTML='<div style="display:flex;gap:12px;align-items:flex-start">'+left+right+'</div>';
+  var mo=spbMonthly(rows);
+  if(typeof Chart!=='undefined'){ try{ if(_spbChart){_spbChart.destroy();_spbChart=null;} }catch(e){} var ctx=document.getElementById('spb-month-chart'); if(ctx){ _spbChart=new Chart(ctx,{ data:{ labels:mo.labels, datasets:[ {type:'bar',label:'캠페인수',yAxisID:'y2',data:mo.cnt,backgroundColor:'#93c5fd',borderRadius:2}, {type:'line',label:'계약매출',yAxisID:'y1',data:mo.rev,borderColor:'#2563eb',backgroundColor:'#2563eb',pointRadius:2,tension:.25} ] }, options:{ responsive:true, plugins:{legend:{labels:{font:{size:10}}}, tooltip:{callbacks:{label:function(c){return c.dataset.label+': '+(c.dataset.label==='계약매출'?kpiWon(c.parsed.y||0)+'원':(c.parsed.y||0)+'건');}}}}, scales:{ y1:{position:'left',ticks:{callback:function(v){return kpiShort(v);},font:{size:9}}}, y2:{position:'right',grid:{drawOnChartArea:false},ticks:{font:{size:9}}}, x:{ticks:{font:{size:9}}} } } }); } }
+  try{ if(typeof renderRepKpi==='function') renderRepKpi(); }catch(e){ console.error('repkpi',e); }
+}
+window.renderSPBoard=renderSPBoard; window.spbOnFilter=spbOnFilter; window.spbReset=spbReset;
+
+
 function showTab(name){
   // 패널 전환
   document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
@@ -5554,7 +5599,7 @@ function showTab(name){
   // 렌더 함수 호출
   if(name==='dashboard') renderSalesDash2();
   if(name==='sales-dash') renderSalesDash();
-  if(name==='sales-perf') { renderSalesPerf(); try{ renderRepKpi(); }catch(e){console.error(e);} }
+  if(name==='sales-perf') { try{ renderSPBoard(); }catch(e){console.error(e);} }
   if(name==='settings')  renderFieldBuilder();
   if(name==='rules')     renderRulesTab();
   if(name==='leads-t')   renderLeads();
