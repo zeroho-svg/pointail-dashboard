@@ -5551,7 +5551,7 @@ function showTab(name){
   // 렌더 함수 호출
   if(name==='dashboard') renderSalesDash2();
   if(name==='sales-dash') renderSalesDash();
-  if(name==='sales-perf') renderSalesPerf();
+  if(name==='sales-perf') { renderSalesPerf(); try{ renderRepKpi(); }catch(e){console.error(e);} }
   if(name==='settings')  renderFieldBuilder();
   if(name==='rules')     renderRulesTab();
   if(name==='leads-t')   renderLeads();
