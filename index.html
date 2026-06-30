@@ -6023,8 +6023,8 @@ function shouldExcludeRow(type, row) {
   // ── 고정 규칙 (변경 불가) ──────────────────────────────
   // 캠페인DB: 결제 요청 여부가 '예'가 아닌 행은 항상 제외
   if (type === 'camp') {
-    const payReq = String(row.payRequested || '').trim();
-    if (payReq !== '예') return true;
+    const _st = String(row.campaignStatus || '').trim();
+    if (_st === '등록 취소' || _st === '캠페인 취소') return true;
   }
 
   // ── 사용자 설정 필터 ──────────────────────────────────
