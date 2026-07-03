@@ -93,9 +93,15 @@ function yn(v)  { return v === "Y" ? "예" : (v === "N" ? "아니오" : ""); }
 function dt(s)  { return (s || "").replace("T", " ").slice(0, 19); }
 
 function mapCampaign(c) {
+  const round = (c.currentSelRndNum != null && c.selRndNum != null)
+    ? (c.currentSelRndNum + "/" + c.selRndNum)
+    : (c.selRndNum != null ? String(c.selRndNum) : "");
   return {
+    // ── 식별/분류 ──
     campaignNo:        c.campaignNo,
     marketingType:     SVC_MAP[c.campaignServiceType] || c.campaignServiceType || "",
+    marketingNo:       c.smNo != null ? c.smNo : "",
+    originalCampaignNo: c.originCampaignNo != null ? c.originCampaignNo : "",
     campaignStatus:    STATE_MAP[c.campaignState] || c.campaignState || "",
     payStatus:         PAYSTATE_MAP[c.paymentState] || "",
     campaignType:      TYPE_MAP[c.campaignType] || c.campaignType || "",
@@ -105,23 +111,36 @@ function mapCampaign(c) {
     advertiserCountry: COUNTRY_MAP[c.corporateCountry] || "",
     companyType:       MEMBER_MAP[c.advMemberType] || "",
     shoppingChannel:   c.storeChnnlNm || "",
+    category:          c.prdctClss || "",
+    selectionType:     c.selType || "",
+    roundInfo:         round,
+    // ── 모집/선정 수치 ──
+    recruitCount:      c.totalRecruitNum || 0,
+    applicantCount:    c.totalApplyNum || 0,
+    selectedCount:     c.totalSelNum || 0,
+    missionDoneCount:  c.totalMsnFinishNum || 0,
     opManager:         c.opManagerNm || "",
     salesManager:      c.salesManagerNm || "",
-    payRequested:      yn(c.paymentYn),          // 결제 요청 여부
-    hidden:            yn(c.campaignHiddenYn),   // 숨김 여부
     pointRevenue:      c.campaignPointAmt || 0,
-    // (계약) 금액
+    // ── (계약) 금액 ──
     contractSaleSum:   amt(c.totalCampaignCostAmt),
     contractMktCost:   amt(c.subtotalCampaignCostAmt),
     contractVat:       amt(c.vatAmt),
     contractFinal:     amt(c.totalCampaignPaymentAmt),   // = 소계+부가세 (계약 최종)
-    // (실행) 금액  ※ 부가세 미포함 기준(대시보드가 ×1.1 처리)
-    execNetAmount:     amt(c.currentSubtotalCampaignCostAmt),
+    payRequested:      yn(c.paymentYn),                  // 결제 요청 여부
+    hidden:            yn(c.campaignHiddenYn),           // 숨김 여부
+    contractSalePrice: amt(c.totalPaymentAmt),
+    // ── (실행) 금액  ※ 부가세 미포함 기준(대시보드가 ×1.1 처리) ──
+    execMissionDone:   c.currentFinishedApplierNum || 0,
+    execMktAmount:     amt(c.currentOriginSubtotalCampaignCostAmt),
     execDiscount:      amt(c.currentDiscountAmt),
+    execNetAmount:     amt(c.currentSubtotalCampaignCostAmt),
     execTotalAmount:   amt(c.currentTotalCampaignPaymentAmt),
-    // 일시
-    createdAt:         dt(c.createDt),
+    // ── 상태/일시 ──
+    forceStopType:     c.forceCloseType || "",
+    pauseType:         c.campaignStopType || "",
     recruitStartAt:    dt(c.recruitBeginDt),
+    createdAt:         dt(c.createDt),
     campaignNoText:    String(c.campaignNo),
   };
 }
