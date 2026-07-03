@@ -4045,7 +4045,7 @@ function sd_classifyCampType(r) {
 }
 
 // ── 캠페인 유형별 상세 KPI 그리드 ─────────────────────
-function sd_campTypeGrid(rows, color) {
+function sd_campTypeGrid(rows, color, country) {
   // 캠페인 유형 순서: 쇼핑 → 인플루언서 → 플레이스 → 리워드
   // campaignType 또는 marketingType 필드 기준으로 정확히 매칭
   const TYPES = [
@@ -4057,6 +4057,7 @@ function sd_campTypeGrid(rows, color) {
 
   // 유형별 row 분리 (campaignType/marketingType/category/선정유형/제목 스캔, 단일 분류)
   const typedRows = key => rows.filter(r => sd_classifyCampType(r) === key);
+  const _ctSid = "camptype_"+(country||"전체"); window.__sdGroupRows = window.__sdGroupRows || {}; window.__sdGroupRows[_ctSid] = { "전체": rows, "쇼핑": typedRows("쇼핑"), "인플루언서": typedRows("인플루언서"), "플레이스": typedRows("플레이스"), "리워드": typedRows("리워드") };
 
   // 전체 합계
   const execTotal = rows.reduce((a,r)=>a+sd_vatIncl(r,'execTotalAmount'),0);
@@ -4087,7 +4088,7 @@ function sd_campTypeGrid(rows, color) {
 
   function makeRow(labels, vals, accent, bg) {
     return `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:5px">
-      ${labels.map((lb,i)=>`<div style="background:${bg||'var(--bg2)'};border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;min-width:0">
+      ${labels.map((lb,i)=>`<div style="background:${bg||'var(--bg2)'};border:1px solid var(--bd);border-radius:var(--r);padding:8px 10px;min-width:0;cursor:pointer" onclick="sd_showDetail('${_ctSid}','${cols[i]}','${country||""} - ${cols[i]}')" title="클릭하면 해당 리스트 표시">
         <div style="font-size:9px;color:var(--tx2);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:${i===0?'600':'400'}" title="${lb}">${lb}</div>
         <div style="font-size:clamp(11px,1vw,14px);font-weight:700;color:${i===0?(accent||'var(--tx)'):'var(--tx)'}">${vals[i]}</div>
       </div>`).join('')}
@@ -4097,7 +4098,7 @@ function sd_campTypeGrid(rows, color) {
   // 컬럼 헤더 표시 (유형 라벨 안내)
   const header = `<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:5px;margin-bottom:4px">
     ${['전체', ...TYPES.map(t=>t.label)].map((lb,i)=>`<div style="font-size:9px;font-weight:600;color:${i===0?color:'var(--tx2)'};padding:3px 10px;
-      background:${i===0?color+'18':'var(--bg3)'};border-radius:var(--r);text-align:center">${lb}</div>`).join('')}
+      background:${i===0?color+'18':'var(--bg3)'};border-radius:var(--r);text-align:center;cursor:pointer" onclick="sd_showDetail('${_ctSid}','${lb}','${country||""} - ${lb}')" title="클릭하면 해당 리스트 표시">${lb} 🔎</div>`).join('')}
   </div>`;
 
   const matchedCount = rows.filter(r => sd_classifyCampType(r)).length;
@@ -4189,7 +4190,7 @@ function sd_renderCountryPanel(rows, country, color, flag, idSuffix) {
     <!-- 캠페인 유형별 상세 -->
     <div style="padding:10px 14px">
       <div style="font-size:11px;font-weight:600;color:var(--tx);margin-bottom:8px;padding:4px 8px;background:${color}18;border-radius:4px;display:inline-block">[${country}-캠페인 유형별 상세]</div>
-      ${sd_campTypeGrid(rows, color)}
+      ${sd_campTypeGrid(rows, color, country)}
     </div>
   </div>`;
 }
