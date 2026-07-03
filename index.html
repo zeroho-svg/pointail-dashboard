@@ -799,6 +799,7 @@ body:has(#auth-screen:not(.hidden)) .app {
           <button class="btn btn-sm" id="sd-q3q" onclick="sd_setQuarter(3,this)" style="font-size:11px;padding:5px 9px">3분기</button>
           <button class="btn btn-sm" id="sd-q4q" onclick="sd_setQuarter(4,this)" style="font-size:11px;padding:5px 9px">4분기</button>
         </div>
+        <div id="sd-month-chips" style="display:flex;gap:4px;flex-wrap:wrap;margin-top:6px"></div>
       </div>
       <!-- 담당자 -->
       <div style="display:flex;flex-direction:column;gap:3px">
@@ -3949,6 +3950,29 @@ function sd_refreshQuarterTable() {
 }
 
 
+/* ════════ 매출 대시보드 월 다중선택 (v1) ════════ */
+window._sdMonthSet = window._sdMonthSet || new Set();
+function sd_renderMonthChips(){
+  var host=document.getElementById('sd-month-chips'); if(!host) return;
+  var yEl=document.getElementById('sd-qyear'); var year=yEl&&yEl.value?parseInt(yEl.value):new Date().getFullYear();
+  var html='<span style="font-size:10px;color:var(--tx2);align-self:center;margin-right:2px">월 다중선택</span>';
+  for(var m=1;m<=12;m++){ var ym=year+'-'+String(m).padStart(2,'0'); var on=_sdMonthSet.has(ym);
+    html+='<button type="button" onclick="sd_toggleMonth('+m+')" style="font-size:11px;padding:4px 8px;border:1px solid '+(on?'var(--lead-tx)':'var(--bd2)')+';border-radius:var(--r);background:'+(on?'var(--lead-tx)':'var(--bg2)')+';color:'+(on?'#fff':'var(--tx)')+';cursor:pointer">'+m+'월</button>';
+  }
+  html+='<button type="button" onclick="sd_clearMonths()" style="font-size:10px;padding:4px 8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg2);color:var(--tx3);cursor:pointer">전체해제</button>';
+  host.innerHTML=html;
+}
+function sd_applyMonthRange(){ var arr=Array.from(_sdMonthSet).sort(); if(!arr.length) return; var min=arr[0], max=arr[arr.length-1]; var y2=+max.slice(0,4), m2=+max.slice(5,7); var end=new Date(y2,m2,0).getDate(); document.getElementById('sd-from').value=min+'-01'; document.getElementById('sd-to').value=max+'-'+String(end).padStart(2,'0'); }
+function sd_toggleMonth(m){ var yEl=document.getElementById('sd-qyear'); var year=yEl&&yEl.value?parseInt(yEl.value):new Date().getFullYear(); var ym=year+'-'+String(m).padStart(2,'0'); if(_sdMonthSet.has(ym)) _sdMonthSet.delete(ym); else _sdMonthSet.add(ym); ['sd-q3','sd-q6','sd-q12','sd-q1q','sd-q2q','sd-q3q','sd-q4q'].forEach(function(id){var b=document.getElementById(id);if(b){b.style.background='';b.style.color='';}}); if(_sdMonthSet.size) sd_applyMonthRange(); sd_renderMonthChips(); }
+function sd_clearMonths(){ _sdMonthSet.clear(); sd_renderMonthChips(); }
+window.sd_renderMonthChips=sd_renderMonthChips; window.sd_toggleMonth=sd_toggleMonth; window.sd_clearMonths=sd_clearMonths; window.sd_applyMonthRange=sd_applyMonthRange;
+(function(){
+  if(typeof sd_setRange==='function' && !sd_setRange.__wrapped){ var o=sd_setRange; window.sd_setRange=function(m,b){ _sdMonthSet.clear(); o(m,b); if(document.getElementById('sd-month-chips'))sd_renderMonthChips(); }; window.sd_setRange.__wrapped=1; }
+  if(typeof sd_setQuarter==='function' && !sd_setQuarter.__wrapped){ var o2=sd_setQuarter; window.sd_setQuarter=function(q,b){ _sdMonthSet.clear(); o2(q,b); if(document.getElementById('sd-month-chips'))sd_renderMonthChips(); }; window.sd_setQuarter.__wrapped=1; }
+  if(typeof sd_syncQuarterYear==='function' && !sd_syncQuarterYear.__wrapped){ var o3=sd_syncQuarterYear; window.sd_syncQuarterYear=function(){ _sdMonthSet.clear(); o3(); if(document.getElementById('sd-month-chips'))sd_renderMonthChips(); }; window.sd_syncQuarterYear.__wrapped=1; }
+  if(typeof sd_initFilters==='function' && !sd_initFilters.__wrapped){ var o4=sd_initFilters; window.sd_initFilters=function(){ var r=o4.apply(this,arguments); if(document.getElementById('sd-month-chips'))sd_renderMonthChips(); return r; }; window.sd_initFilters.__wrapped=1; }
+})();
+
 function sd_setRange(months, btn) {
   const to = new Date();
   const from = new Date();
@@ -4208,6 +4232,7 @@ function renderSalesDash() {
       if (from && d < from) return false;
       if (to   && d > to)   return false;
     }
+    if (window._sdMonthSet && _sdMonthSet.size) { if (!d || !_sdMonthSet.has(d.slice(0,7))) return false; }
     if (rep     && r.salesManager    !== rep)     return false;
     if (channel && r.shoppingChannel !== channel) return false;
     if (mkttype && r.marketingType   !== mkttype) return false;
