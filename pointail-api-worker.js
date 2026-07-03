@@ -35,9 +35,13 @@ export default {
       "Access-Control-Allow-Headers": "Content-Type",
     };
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
-    if (!env.API_TOKEN) return json({ error: "API_TOKEN 시크릿이 설정되지 않았습니다." }, 500, cors);
+    const TOKEN = (env.API_TOKEN || "").trim();          // 공백/개행 제거(붙여넣기 방어)
+    if (!TOKEN) return json({ error: "API_TOKEN 시크릿이 설정되지 않았습니다." }, 500, cors);
 
     const url = new URL(request.url);
+    if (url.searchParams.get("diag") === "1") {           // 자가진단(값 노출 안 함)
+      return json({ tokenLen: TOKEN.length, tokenPrefix: TOKEN.slice(0, 2), looksJwt: /^ey/.test(TOKEN) }, 200, cors);
+    }
     const raw = url.searchParams.get("raw") === "1";     // raw=1 → 원본 필드 그대로
     const noCache = url.searchParams.get("refresh") === "1";
     const cache = caches.default, cacheKey = new Request(url.toString(), request);
@@ -50,7 +54,12 @@ export default {
       let page = 1, totalPage = 1, guard = 0;
       do {
         const api = `${API_BASE}${CAMPAIGN_SEARCH}?campaignDateSearchType=${dateType}&page=${page}&pageSize=${pageSize}`;
-        const res = await fetch(api, { headers: { "X-Auth-Token": env.API_TOKEN, "Accept": "application/json, text/plain, */*" } });
+        const res = await fetch(api, { headers: {
+          "X-Auth-Token": TOKEN,
+          "Accept": "application/json, text/plain, */*",
+          "Origin": "https://admin.storelink.io",
+          "Referer": "https://admin.storelink.io/",
+        } });
         if (res.status === 401) return json({ error: "인증 실패(401): 토큰 만료. API_TOKEN을 새로 복사해 교체하세요." }, 401, cors);
         if (!res.ok) return json({ error: `상위 API 오류 ${res.status}` }, 502, cors);
         const body = await res.json();
