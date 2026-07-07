@@ -1,31 +1,87 @@
 /**
  * ─────────────────────────────────────────────────────────────
- *  Pointail ↔ Storelink Admin API 프록시 (Cloudflare Worker)
+ *  Pointail ↔ Storelink Admin API 프록시 (Cloudflare Worker) — 자동 로그인판
  * ─────────────────────────────────────────────────────────────
- *  apia-v2 캠페인 API를 인증 호출 → 전량 수집 → 대시보드 스키마로 매핑
- *  → CORS 붙여 포인테일 대시보드에 JSON 제공. (구글시트 수작업 대체)
+ *  Worker가 이메일/비번으로 직접 로그인 → 토큰 획득 → 캠페인 전량 수집
+ *  → 대시보드 스키마로 매핑 → CORS 붙여 JSON 제공.
+ *  토큰 만료 시 자동 재로그인. 사용자는 대시보드 버튼만 누르면 됨(완전 자동).
  *
- *  ── 인증: X-Auth-Token 헤더 ────────────────────────────────
- *  이 API는 `X-Auth-Token: <JWT>` 커스텀 헤더로 인증합니다.
- *  토큰 = 어드민 로그인 세션의 토큰(어드민 쿠키 a_prod_token 값과 동일).
+ *  ── Cloudflare 시크릿 설정 (Settings → Variables and Secrets, Encrypt) ──
+ *     ADMIN_ID = 어드민 로그인 아이디(이메일)      (자동로그인 필수)
+ *     ADMIN_PW = 어드민 로그인 비밀번호            (자동로그인 필수)
+ *     ALLOW_ORIGIN = https://zeroho-svg.github.io  (선택)
+ *     API_TOKEN = <X-Auth-Token>                   (선택·수동 폴백용)
+ *  ※ ADMIN_ID/ADMIN_PW가 있으면 자동 로그인, 없으면 API_TOKEN(수동) 사용.
  *
- *  ── 배포 ──────────────────────────────────────────────────
- *  1) Cloudflare → Workers & Pages → Create → Worker → 이 코드 붙여넣고 Deploy
- *  2) Settings → Variables and Secrets 에 시크릿 추가:
- *        API_TOKEN    = <X-Auth-Token 값>                (필수)
- *        ALLOW_ORIGIN = https://zeroho-svg.github.io      (선택)
- *     ※ 토큰 구하는 법: 어드민 F12 → Network → campaigns/search 요청 →
- *        Headers → Request Headers → `x-auth-token` 값 복사.
- *  3) 배포된 Worker URL 을 대시보드에서 fetch.
- *
- *  ── 만료(반자동) ──────────────────────────────────────────
- *  토큰은 약 12시간 유효 → 401 나면 위 토큰만 다시 복사해 교체.
+ *  로그인: POST /stl/users/sign-in  body {userId, userPw, registerSite:"stl"}
+ *          → result.token 을 X-Auth-Token 으로 사용.
  * ─────────────────────────────────────────────────────────────
  */
 
 const API_BASE = "https://apia-v2.storelink.io";
 const CAMPAIGN_SEARCH = "/pug/jp/campaigns/search";
-const CACHE_TTL_SEC = 600;
+const SIGN_IN = "/stl/users/sign-in";
+const REGISTER_SITE = "stl";
+const CACHE_TTL_SEC = 600;                 // 데이터 응답 캐시(10분)
+const TOKEN_TTL_SEC = 3000;                // 토큰 캐시(50분)
+const TOKEN_CACHE_KEY = "https://pointail-token-cache/internal";
+const UA = "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Mobile Safari/537.36";
+
+function upstreamHeaders(extra) {
+  return Object.assign({
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "ko-KR,ko;q=0.9",
+    "Origin": "https://admin.storelink.io",
+    "Referer": "https://admin.storelink.io/",
+    "User-Agent": UA,
+    "sec-fetch-mode": "cors",
+    "sec-fetch-site": "same-site",
+  }, extra || {});
+}
+
+// ── 로그인 → 토큰 발급 ──
+async function login(env) {
+  if (!env.ADMIN_ID || !env.ADMIN_PW) throw new Error("ADMIN_ID/ADMIN_PW 시크릿이 설정되지 않았습니다.");
+  const res = await fetch(API_BASE + SIGN_IN, {
+    method: "POST",
+    headers: upstreamHeaders({ "Content-Type": "application/json" }),
+    body: JSON.stringify({ userId: env.ADMIN_ID, userPw: env.ADMIN_PW, registerSite: REGISTER_SITE }),
+  });
+  const j = await res.json().catch(() => ({}));
+  const token = j && j.result && j.result.token;
+  if (!token) throw new Error("로그인 실패: " + (j.message || j.messageCode || ("HTTP " + res.status)));
+  return token;
+}
+
+// ── 토큰 얻기(캐시 우선, forceNew 시 재로그인) ──
+async function getAutoToken(env, ctx, forceNew) {
+  const cache = caches.default, key = new Request(TOKEN_CACHE_KEY);
+  if (!forceNew) {
+    const hit = await cache.match(key);
+    if (hit) { const t = await hit.text(); if (t) return t; }
+  }
+  const token = await login(env);
+  ctx.waitUntil(cache.put(key, new Response(token, { headers: { "Cache-Control": "max-age=" + TOKEN_TTL_SEC } })));
+  return token;
+}
+
+// ── 캠페인 전 페이지 수집 ──
+async function fetchAllCampaigns(token, dateType, pageSize) {
+  const all = [];
+  let page = 1, totalPage = 1, guard = 0, unauthorized = false;
+  do {
+    const api = `${API_BASE}${CAMPAIGN_SEARCH}?campaignDateSearchType=${dateType}&page=${page}&pageSize=${pageSize}`;
+    const res = await fetch(api, { headers: upstreamHeaders({ "X-Auth-Token": token }) });
+    if (res.status === 401) { unauthorized = true; break; }
+    if (!res.ok) throw new Error("상위 API 오류 " + res.status);
+    const body = await res.json();
+    const list = (body.result && body.result.campaigns) || [];
+    all.push.apply(all, list);
+    totalPage = (body.page && body.page.totalPage) || (list.length < pageSize ? page : page + 1);
+    page++; guard++;
+  } while (page <= totalPage && guard < 100);
+  return { all, unauthorized };
+}
 
 export default {
   async fetch(request, env, ctx) {
@@ -35,14 +91,15 @@ export default {
       "Access-Control-Allow-Headers": "Content-Type",
     };
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
-    const TOKEN = (env.API_TOKEN || "").trim();          // 공백/개행 제거(붙여넣기 방어)
-    if (!TOKEN) return json({ error: "API_TOKEN 시크릿이 설정되지 않았습니다." }, 500, cors);
 
     const url = new URL(request.url);
-    if (url.searchParams.get("diag") === "1") {           // 자가진단(값 노출 안 함)
-      return json({ tokenLen: TOKEN.length, tokenPrefix: TOKEN.slice(0, 2), looksJwt: /^ey/.test(TOKEN) }, 200, cors);
+    const autoMode = !!(env.ADMIN_ID && env.ADMIN_PW);
+
+    if (url.searchParams.get("diag") === "1") {
+      return json({ mode: autoMode ? "auto-login" : "manual-token", hasId: !!env.ADMIN_ID, hasPw: !!env.ADMIN_PW, hasApiToken: !!env.API_TOKEN, registerSite: REGISTER_SITE }, 200, cors);
     }
-    const raw = url.searchParams.get("raw") === "1";     // raw=1 → 원본 필드 그대로
+
+    const raw = url.searchParams.get("raw") === "1";
     const noCache = url.searchParams.get("refresh") === "1";
     const cache = caches.default, cacheKey = new Request(url.toString(), request);
     if (!noCache) { const hit = await cache.match(cacheKey); if (hit) return withCors(hit, cors); }
@@ -50,29 +107,24 @@ export default {
     try {
       const pageSize = clampInt(url.searchParams.get("pageSize"), 200, 1, 200);
       const dateType = url.searchParams.get("campaignDateSearchType") || "CREATE_DATE";
-      const all = [];
-      let page = 1, totalPage = 1, guard = 0;
-      do {
-        const api = `${API_BASE}${CAMPAIGN_SEARCH}?campaignDateSearchType=${dateType}&page=${page}&pageSize=${pageSize}`;
-        const res = await fetch(api, { headers: {
-          "X-Auth-Token": TOKEN,
-          "Accept": "application/json, text/plain, */*",
-          "Origin": "https://admin.storelink.io",
-          "Referer": "https://admin.storelink.io/",
-        } });
-        if (res.status === 401) return json({ error: "인증 실패(401): 토큰 만료. API_TOKEN을 새로 복사해 교체하세요." }, 401, cors);
-        if (!res.ok) return json({ error: `상위 API 오류 ${res.status}` }, 502, cors);
-        const body = await res.json();
-        const list = (body.result && body.result.campaigns) || [];
-        all.push(...list);
-        totalPage = (body.page && body.page.totalPage) || (list.length < pageSize ? page : page + 1);
-        page++; guard++;
-      } while (page <= totalPage && guard < 100);
 
-      const campaigns = raw ? all : all.map(mapCampaign);
-      const payload = { source: "storelink-apia-v2", fetchedAt: new Date().toISOString(), count: campaigns.length, campaigns };
+      // 토큰 확보: 자동 로그인 우선, 없으면 수동 API_TOKEN
+      let token;
+      if (autoMode) token = await getAutoToken(env, ctx, false);
+      else token = (env.API_TOKEN || "").trim();
+      if (!token) return json({ error: "로그인 정보(ADMIN_ID/ADMIN_PW) 또는 API_TOKEN 시크릿이 필요합니다." }, 500, cors);
+
+      let r = await fetchAllCampaigns(token, dateType, pageSize);
+      if (r.unauthorized && autoMode) {            // 토큰 만료 → 재로그인 후 1회 재시도
+        token = await getAutoToken(env, ctx, true);
+        r = await fetchAllCampaigns(token, dateType, pageSize);
+      }
+      if (r.unauthorized) return json({ error: "인증 실패(401): 로그인 정보(ADMIN_ID/ADMIN_PW)를 확인하세요." }, 401, cors);
+
+      const campaigns = raw ? r.all : r.all.map(mapCampaign);
+      const payload = { source: "storelink-apia-v2", mode: autoMode ? "auto-login" : "manual-token", fetchedAt: new Date().toISOString(), count: campaigns.length, campaigns };
       const response = json(payload, 200, cors);
-      ctx.waitUntil(cache.put(cacheKey, json(payload, 200, { ...cors, "Cache-Control": `max-age=${CACHE_TTL_SEC}` })));
+      ctx.waitUntil(cache.put(cacheKey, json(payload, 200, Object.assign({}, cors, { "Cache-Control": "max-age=" + CACHE_TTL_SEC }))));
       return response;
     } catch (e) {
       return json({ error: String((e && e.message) || e) }, 500, cors);
@@ -97,7 +149,6 @@ function mapCampaign(c) {
     ? (c.currentSelRndNum + "/" + c.selRndNum)
     : (c.selRndNum != null ? String(c.selRndNum) : "");
   return {
-    // ── 식별/분류 ──
     campaignNo:        c.campaignNo,
     marketingType:     SVC_MAP[c.campaignServiceType] || c.campaignServiceType || "",
     marketingNo:       c.smNo != null ? c.smNo : "",
@@ -114,7 +165,6 @@ function mapCampaign(c) {
     category:          c.prdctClss || "",
     selectionType:     c.selType || "",
     roundInfo:         round,
-    // ── 모집/선정 수치 ──
     recruitCount:      c.totalRecruitNum || 0,
     applicantCount:    c.totalApplyNum || 0,
     selectedCount:     c.totalSelNum || 0,
@@ -122,21 +172,18 @@ function mapCampaign(c) {
     opManager:         c.opManagerNm || "",
     salesManager:      c.salesManagerNm || "",
     pointRevenue:      c.campaignPointAmt || 0,
-    // ── (계약) 금액 ──
     contractSaleSum:   amt(c.totalCampaignCostAmt),
     contractMktCost:   amt(c.subtotalCampaignCostAmt),
     contractVat:       amt(c.vatAmt),
-    contractFinal:     amt(c.totalCampaignPaymentAmt),   // = 소계+부가세 (계약 최종)
-    payRequested:      yn(c.paymentYn),                  // 결제 요청 여부
-    hidden:            yn(c.campaignHiddenYn),           // 숨김 여부
+    contractFinal:     amt(c.totalCampaignPaymentAmt),
+    payRequested:      yn(c.paymentYn),
+    hidden:            yn(c.campaignHiddenYn),
     contractSalePrice: amt(c.totalPaymentAmt),
-    // ── (실행) 금액  ※ 부가세 미포함 기준(대시보드가 ×1.1 처리) ──
     execMissionDone:   c.currentFinishedApplierNum || 0,
     execMktAmount:     amt(c.currentOriginSubtotalCampaignCostAmt),
     execDiscount:      amt(c.currentDiscountAmt),
     execNetAmount:     amt(c.currentSubtotalCampaignCostAmt),
     execTotalAmount:   amt(c.currentTotalCampaignPaymentAmt),
-    // ── 상태/일시 ──
     forceStopType:     c.forceCloseType || "",
     pauseType:         c.campaignStopType || "",
     recruitStartAt:    dt(c.recruitBeginDt),
@@ -145,9 +192,8 @@ function mapCampaign(c) {
   };
 }
 
-// ── 유틸 ────────────────────────────────────────────────────
 function json(obj, status, headers) {
-  return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...(headers || {}) } });
+  return new Response(JSON.stringify(obj), { status, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, headers || {}) });
 }
 function withCors(res, cors) { const h = new Headers(res.headers); for (const k in cors) h.set(k, cors[k]); return new Response(res.body, { status: res.status, headers: h }); }
 function clampInt(v, d, min, max) { const n = parseInt(v || d, 10); return isNaN(n) ? d : Math.max(min, Math.min(max, n)); }
