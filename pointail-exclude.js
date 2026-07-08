@@ -98,7 +98,7 @@
           '<div style="font-size:12px;color:#555;margin-bottom:4px">캠페인 번호로 제외 (여러 개는 쉼표/공백/줄바꿈)</div>' +
           '<div style="display:flex;gap:6px"><textarea id="pt-ex-input" rows="1" placeholder="예: 102683, 102540" style="flex:1;min-height:32px;padding:6px 8px;border:1px solid #ccc;border-radius:6px;resize:vertical;font-size:13px"></textarea>' +
           '<button id="pt-ex-add" class="btn btn-sm" style="white-space:nowrap">제외 추가</button></div>' +
-          '<div style="font-size:12px;color:#555;margin:10px 0 4px">목록에서 검색해 제외 (번호/제목)</div>' +
+          '<div style="font-size:12px;color:#555;margin:10px 0 4px">목록에서 검색해 제외 (번호/제목/스토어명/법인명/영업·운영담당자)</div>' +
           '<input id="pt-ex-search" placeholder="검색어 입력" style="width:100%;padding:6px 8px;border:1px solid #ccc;border-radius:6px;font-size:13px" />' +
           '<div id="pt-ex-results" style="margin-top:6px;max-height:180px;overflow:auto"></div>' +
         '</div>' +
@@ -159,13 +159,18 @@
     q = q.trim().toLowerCase();
     if (!q) { box.innerHTML = '<div style="font-size:12px;color:#aaa;padding:4px">검색어를 입력하면 캠페인이 표시됩니다.</div>'; return; }
     var rows = (typeof DB !== 'undefined' && DB.camp ? DB.camp : []).filter(function (c) {
-      return noOf(c).indexOf(q) > -1 || (c.campaignTitle || '').toLowerCase().indexOf(q) > -1;
-    }).slice(0, 30);
+      var hay = (noOf(c) + ' ' + (c.campaignTitle || '') + ' ' + (c.storeName || '') + ' ' +
+        (c.corpName || '') + ' ' + (c.salesManager || '') + ' ' + (c.opManager || '')).toLowerCase();
+      return hay.indexOf(q) > -1;
+    }).slice(0, 40);
     if (!rows.length) { box.innerHTML = '<div style="font-size:12px;color:#aaa;padding:4px">일치하는 캠페인이 없습니다.</div>'; return; }
     box.innerHTML = rows.map(function (c) {
       var no = noOf(c);
+      var meta = [c.storeName, c.corpName, c.salesManager ? '영업 ' + c.salesManager : '', c.opManager ? '운영 ' + c.opManager : '']
+        .filter(Boolean).join(' · ');
       return '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:4px 6px;border-bottom:1px solid #f0f0f0;font-size:12px">' +
-        '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>' + no + '</b> ' + esc(c.campaignTitle || '') + '</span>' +
+        '<span style="flex:1;overflow:hidden"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>' + no + '</b> ' + esc(c.campaignTitle || '') + '</div>' +
+        (meta ? '<div style="color:#999;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(meta) + '</div>' : '') + '</span>' +
         '<button class="btn btn-sm pt-ex-pick" data-no="' + no + '" style="font-size:11px;padding:2px 8px">제외</button></div>';
     }).join('');
     [].slice.call(box.querySelectorAll('.pt-ex-pick')).forEach(function (b) {
