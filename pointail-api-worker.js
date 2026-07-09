@@ -87,16 +87,35 @@ export default {
   async fetch(request, env, ctx) {
     const cors = {
       "Access-Control-Allow-Origin": env.ALLOW_ORIGIN || "*",
-      "Access-Control-Allow-Methods": "GET, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, PUT, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     };
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
 
     const url = new URL(request.url);
+
+    // ── 공유 제외목록 (KV) : 여러 컴퓨터에서 누적 공유 ──
+    //   GET  /exclusions          → 저장된 제외목록(JSON) 반환
+    //   PUT  /exclusions  body=JSON → 제외목록 저장(덮어쓰기)
+    if (url.pathname === "/exclusions") {
+      if (!env.PT_KV) return json({ error: "KV(PT_KV) 바인딩이 설정되지 않았습니다." }, 500, cors);
+      if (request.method === "GET") {
+        const v = await env.PT_KV.get("excluded_camps");
+        return new Response(v || "{}", { status: 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, cors) });
+      }
+      if (request.method === "PUT") {
+        const body = await request.text();
+        try { JSON.parse(body || "{}"); } catch (e) { return json({ error: "잘못된 JSON" }, 400, cors); }
+        await env.PT_KV.put("excluded_camps", body || "{}");
+        return json({ ok: true }, 200, cors);
+      }
+      return json({ error: "허용되지 않은 메서드" }, 405, cors);
+    }
+
     const autoMode = !!(env.ADMIN_ID && env.ADMIN_PW);
 
     if (url.searchParams.get("diag") === "1") {
-      return json({ mode: autoMode ? "auto-login" : "manual-token", hasId: !!env.ADMIN_ID, hasPw: !!env.ADMIN_PW, hasApiToken: !!env.API_TOKEN, registerSite: REGISTER_SITE }, 200, cors);
+      return json({ mode: autoMode ? "auto-login" : "manual-token", hasId: !!env.ADMIN_ID, hasPw: !!env.ADMIN_PW, hasApiToken: !!env.API_TOKEN, hasKV: !!env.PT_KV, registerSite: REGISTER_SITE }, 200, cors);
     }
 
     const raw = url.searchParams.get("raw") === "1";
