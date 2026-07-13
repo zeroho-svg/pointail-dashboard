@@ -16,6 +16,7 @@
   var CH_LIST = ['단톡방', '이메일', '기타'];
   var CONTACTS = {};
   var view = 'adv';
+  var advLimit = 15, reLimit = 15;   // 15개 표시 + 더보기(+20)
 
   function n(v) { return parseFloat(String(v == null ? 0 : v).replace(/[,\s₩¥]/g, '')) || 0; }
   function f(v) { return Math.round(n(v)).toLocaleString('ko-KR'); }
@@ -101,6 +102,7 @@
   }
 
   function renderAdvList() {
+    advLimit = 15;
     var rows = members().map(function (m) { return { m: m, s: advStats(m) }; });
     var withCamp = rows.filter(function (r) { return r.s.count > 0; }).length;
     var T = { cSale: 0, cSvc: 0, eSale: 0, eSvc: 0 };
@@ -140,10 +142,11 @@
     }).join('');
 
     return cards + '<div class="ptad-card"><h3>광고주 목록 <span class="ptad-muted" style="font-weight:400;font-size:12px">— 행 클릭 시 상세</span></h3>' +
-      toolbar + '<div style="overflow:auto;max-height:560px"><table class="ptad-tbl"><thead><tr>' +
+      toolbar + '<div style="overflow:auto"><table class="ptad-tbl"><thead><tr>' +
       '<th>법인명</th><th>영업담당자</th><th style="min-width:150px">소통방식</th><th>가입일</th><th class="c">캠페인</th>' +
       '<th class="r">계약 전체</th><th class="r">계약 서비스</th><th class="r">실행 전체</th><th class="r">실행 서비스</th>' +
-      '<th>최근 캠페인</th><th>상태</th><th></th></tr></thead><tbody id="ptad-body">' + body + '</tbody></table></div></div>';
+      '<th>최근 캠페인</th><th>상태</th><th></th></tr></thead><tbody id="ptad-body">' + body + '</tbody></table></div>' +
+      '<div style="text-align:center;margin:10px 0"><button id="ptad-more" class="ptad-btn ptad-p" style="padding:8px 18px">더보기</button></div></div>';
   }
 
   function renderReps() {
@@ -182,6 +185,7 @@
   }
   var BUCKETS = [['w1', '1주 이내', '#128a3a'], ['w2', '2주', '#185fa5'], ['m1', '1개월', '#b45309'], ['m2', '2개월', '#c0392b'], ['m2plus', '2개월+', '#a32d2d'], ['new', '신규 미진행', '#8a94a6']];
   function renderReapply() {
+    reLimit = 15;
     var rows = members().map(function (m) { var s = advStats(m); return { m: m, s: s, bk: bucketOf(s.since, s.count) }; });
     var cnt = {}; BUCKETS.forEach(function (b) { cnt[b[0]] = 0; }); rows.forEach(function (r) { cnt[r.bk] = (cnt[r.bk] || 0) + 1; });
     var chips = '<div class="ptad-cards" style="margin-bottom:14px">' + BUCKETS.map(function (b) { return kpi(b[1], (cnt[b[0]] || 0) + '개', '', b[2]); }).join('') + '</div>';
@@ -191,7 +195,7 @@
       var reapply = r.s.count === 0 ? '<span class="ptad-muted">0회</span>' : r.s.count + '회';
       var act = r.s.count === 0 ? '첫 영업' : (r.s.since > 30 ? '이탈위험·재영업' : (r.s.since > 14 ? '재영업' : '유지'));
       var actColor = r.s.count === 0 ? '#185fa5' : (r.s.since > 30 ? '#c0392b' : (r.s.since > 14 ? '#185fa5' : '#8a94a6'));
-      return '<tr class="ptad-click ptad-adv-open" data-company="' + esc(r.m.company) + '">' +
+      return '<tr class="ptad-click ptad-adv-open ptad-re-row" data-company="' + esc(r.m.company) + '">' +
         '<td><b>' + esc(r.m.company) + '</b> <span class="ptad-muted" style="font-size:11px">#' + esc(r.m.memberNo || '') + '</span></td>' +
         '<td>' + (r.m.salesRep ? esc(r.m.salesRep) : '<span class="ptad-muted">미배정</span>') + '</td>' +
         '<td class="ptad-muted">' + (r.s.last || '<span class="ptad-muted">캠페인 없음</span>') + '</td>' +
@@ -201,7 +205,8 @@
         '<td class="c" style="color:' + actColor + '">' + act + '</td></tr>';
     }).join('');
     return chips + '<div class="ptad-card"><h3>재신청 관리 <span class="ptad-muted" style="font-weight:400;font-size:12px">— 마지막 캠페인 신청일 경과 기준 · 기준일 ' + todayStr() + '</span></h3>' +
-      '<div style="overflow:auto;max-height:560px"><table class="ptad-tbl"><thead><tr><th>법인명</th><th>담당자</th><th>마지막 신청</th><th class="r">경과</th><th class="c">재신청</th><th class="c">구간</th><th class="c">액션</th></tr></thead><tbody>' + body + '</tbody></table></div></div>';
+      '<div style="overflow:auto"><table class="ptad-tbl"><thead><tr><th>법인명</th><th>담당자</th><th>마지막 신청</th><th class="r">경과</th><th class="c">재신청</th><th class="c">구간</th><th class="c">액션</th></tr></thead><tbody>' + body + '</tbody></table></div>' +
+      '<div style="text-align:center;margin:10px 0"><button id="ptad-re-more" class="ptad-btn ptad-p" style="padding:8px 18px">더보기</button></div></div>';
   }
 
   // ── 모달 ──
@@ -288,7 +293,7 @@
   function applyFilter() {
     var q = (document.getElementById('ptad-q').value || '').trim().toLowerCase();
     var ft = document.getElementById('ptad-ftype').value, fr = document.getElementById('ptad-frep').value, fc = document.getElementById('ptad-fcamp').value;
-    var shown = 0;
+    var passed = 0, shown = 0;
     document.querySelectorAll('#ptad-body .ptad-adv-row').forEach(function (tr) {
       var comp = tr.getAttribute('data-company').toLowerCase(), rep = (tr.getAttribute('data-rep') || '').toLowerCase(), mno = (tr.getAttribute('data-mno') || '').toLowerCase();
       var ok = true;
@@ -297,9 +302,12 @@
       if (fr && fr !== '(전체)' && (tr.getAttribute('data-rep') || '') !== fr) ok = false;
       if (fc === 'y' && tr.getAttribute('data-has') !== 'y') ok = false;
       if (fc === 'n' && tr.getAttribute('data-has') !== 'n') ok = false;
-      tr.style.display = ok ? '' : 'none'; if (ok) shown++;
+      if (ok) { passed++; if (passed <= advLimit) { tr.style.display = ''; shown++; } else tr.style.display = 'none'; }
+      else tr.style.display = 'none';
     });
-    var cnt = document.getElementById('ptad-cnt'); if (cnt) cnt.textContent = shown + '개 표시';
+    var cnt = document.getElementById('ptad-cnt'); if (cnt) cnt.textContent = passed + '개 중 ' + shown + '개 표시';
+    var mb = document.getElementById('ptad-more');
+    if (mb) { var remain = passed - shown; mb.style.display = remain > 0 ? '' : 'none'; mb.textContent = '더보기 (+' + Math.min(20, remain) + ') · 남은 ' + remain + '개'; }
   }
 
   function wire() {
@@ -308,8 +316,22 @@
     host.querySelectorAll('.ptad-adv-open').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openAdv(b.getAttribute('data-company')); }; });
     host.querySelectorAll('.ptad-adv-row').forEach(function (tr) { tr.onclick = function () { openAdv(tr.getAttribute('data-company')); }; });
     host.querySelectorAll('.ptad-rep-row, .ptad-rep-open').forEach(function (el) { el.onclick = function (e) { e.stopPropagation(); openRep(el.getAttribute('data-rep')); }; });
-    ['ptad-q', 'ptad-ftype', 'ptad-frep', 'ptad-fcamp'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('input', applyFilter); });
+    ['ptad-q', 'ptad-ftype', 'ptad-frep', 'ptad-fcamp'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('input', function () { advLimit = 15; applyFilter(); }); });
+    var mb = document.getElementById('ptad-more'); if (mb) mb.onclick = function () { advLimit += 20; applyFilter(); };
     if (document.getElementById('ptad-cnt')) applyFilter();
+    // 재신청 관리 더보기
+    var rmb = document.getElementById('ptad-re-more');
+    if (rmb) {
+      var reRows = host.querySelectorAll('.ptad-re-row');
+      var reApply = function () {
+        var sh = 0; reRows.forEach(function (tr, i) { tr.style.display = i < reLimit ? '' : 'none'; if (i < reLimit) sh++; });
+        var remain = reRows.length - Math.min(reLimit, reRows.length);
+        rmb.style.display = remain > 0 ? '' : 'none';
+        rmb.textContent = '더보기 (+' + Math.min(20, remain) + ') · 남은 ' + remain + '개';
+      };
+      rmb.onclick = function () { reLimit += 20; reApply(); };
+      reApply();
+    }
   }
 
   // ── 스타일 ──
