@@ -117,15 +117,15 @@
 
     var reps = ['(전체)'].concat(repList());
     var toolbar = '<div class="ptad-toolbar">' +
-      '<input id="ptad-q" placeholder="법인명·담당자 검색" style="min-width:200px">' +
+      '<input id="ptad-q" placeholder="법인명·회원번호·담당자 검색" style="min-width:200px">' +
       '<select id="ptad-ftype"><option value="">유형 전체</option><option>일반 광고주</option><option>대행사</option></select>' +
       '<select id="ptad-frep">' + reps.map(function (r) { return '<option>' + esc(r) + '</option>'; }).join('') + '</select>' +
       '<select id="ptad-fcamp"><option value="">진행여부 전체</option><option value="y">캠페인 있음</option><option value="n">가입만</option></select>' +
       '<span class="ptad-muted" style="font-size:12px" id="ptad-cnt"></span></div>';
 
     var body = rows.sort(function (a, b) { return b.s.cSale - a.s.cSale; }).map(function (r) {
-      return '<tr class="ptad-click ptad-adv-row" data-company="' + esc(r.m.company) + '" data-type="' + esc(r.m.joinType || '') + '" data-rep="' + esc(r.m.salesRep || '') + '" data-has="' + (r.s.count > 0 ? 'y' : 'n') + '">' +
-        '<td><b>' + esc(r.m.company || '(법인명 없음)') + '</b> ' + typeBadge(r.m.joinType) + '</td>' +
+      return '<tr class="ptad-click ptad-adv-row" data-company="' + esc(r.m.company) + '" data-mno="' + esc(r.m.memberNo || '') + '" data-type="' + esc(r.m.joinType || '') + '" data-rep="' + esc(r.m.salesRep || '') + '" data-has="' + (r.s.count > 0 ? 'y' : 'n') + '">' +
+        '<td><b>' + esc(r.m.company || '(법인명 없음)') + '</b> <span class="ptad-muted" style="font-size:11px">#' + esc(r.m.memberNo || '') + '</span> ' + typeBadge(r.m.joinType) + '</td>' +
         '<td>' + (r.m.salesRep ? esc(r.m.salesRep) : '<span class="ptad-muted">미배정</span>') + '</td>' +
         '<td>' + contactChips(r.m.company) + ' <button class="ptad-btn ptad-ct-edit" data-company="' + esc(r.m.company) + '" style="padding:2px 8px;font-size:11px;margin-top:2px">설정</button></td>' +
         '<td class="ptad-muted">' + esc(r.m.joinDate || '') + '</td>' +
@@ -192,7 +192,7 @@
       var act = r.s.count === 0 ? '첫 영업' : (r.s.since > 30 ? '이탈위험·재영업' : (r.s.since > 14 ? '재영업' : '유지'));
       var actColor = r.s.count === 0 ? '#185fa5' : (r.s.since > 30 ? '#c0392b' : (r.s.since > 14 ? '#185fa5' : '#8a94a6'));
       return '<tr class="ptad-click ptad-adv-open" data-company="' + esc(r.m.company) + '">' +
-        '<td><b>' + esc(r.m.company) + '</b></td>' +
+        '<td><b>' + esc(r.m.company) + '</b> <span class="ptad-muted" style="font-size:11px">#' + esc(r.m.memberNo || '') + '</span></td>' +
         '<td>' + (r.m.salesRep ? esc(r.m.salesRep) : '<span class="ptad-muted">미배정</span>') + '</td>' +
         '<td class="ptad-muted">' + (r.s.last || '<span class="ptad-muted">캠페인 없음</span>') + '</td>' +
         '<td class="r" style="color:' + bk[2] + '">' + (r.s.count ? (r.s.since + '일') : '—') + '</td>' +
@@ -226,7 +226,7 @@
       s.cs.slice().sort(function (a, b) { return d(a.createdAt).localeCompare(d(b.createdAt)); }).map(function (c) {
         return '<div class="ptad-tl-i">' + esc(d(c.createdAt)) + ' · ' + esc(c.campaignTitle || '') + ' ' + stChip(c.campaignStatus || '') + ' <b>' + won(c.contractFinal) + '</b></div>';
       }).join('') + '</div>';
-    var html = '<div class="ptad-mh"><div><div style="font-size:18px;font-weight:800">' + esc(m.company) + ' ' + typeBadge(m.joinType) + '</div>' +
+    var html = '<div class="ptad-mh"><div><div style="font-size:18px;font-weight:800">' + esc(m.company) + ' <span style="font-size:13px;color:#98a2b3">#' + esc(m.memberNo || '') + '</span> ' + typeBadge(m.joinType) + '</div>' +
       '<div class="ptad-meta"><span>가입일 <b>' + esc(m.joinDate || '') + '</b></span><span>영업담당 <b>' + esc(m.salesRep || '미배정') + '</b></span><span>연락처 <b>' + esc(m.phone || '') + '</b></span><span>아이디 <b>' + esc(m.userId || '') + '</b></span><span>상태 <b>' + esc(m.accountStatus || '') + '</b></span><span>마케팅수신 <b>' + esc(m.marketingConsent || '') + '</b></span><span>소통 ' + contactChips(m.company) + ' <button class="ptad-btn ptad-ct-edit" data-company="' + esc(m.company) + '" style="padding:1px 7px;font-size:11px">설정</button></span></div></div>' +
       '<button class="ptad-x" data-close="1">×</button></div>' +
       '<div class="ptad-mb">' + kpis + '<h3 style="font-size:14px;margin:6px 0 8px">캠페인 진행 내역</h3>' + hist +
@@ -242,7 +242,7 @@
       '<div class="ptad-cards">' + kpi('(계약) 전체', won(cSale)) + kpi('(계약) 서비스', won(cSvc)) + kpi('(실행) 전체', won(eSale)) + kpi('(실행) 서비스', won(eSvc)) + '</div>';
     var rows = advs.map(function (r) {
       return '<tr class="ptad-click ptad-adv-open" data-company="' + esc(r.m.company) + '">' +
-        '<td><b>' + esc(r.m.company) + '</b> ' + typeBadge(r.m.joinType) + '</td>' +
+        '<td><b>' + esc(r.m.company) + '</b> <span class="ptad-muted" style="font-size:11px">#' + esc(r.m.memberNo || '') + '</span> ' + typeBadge(r.m.joinType) + '</td>' +
         '<td class="ptad-muted">' + esc(r.m.joinDate || '') + '</td><td class="c">' + r.s.count + '</td>' +
         '<td class="ptad-muted">' + (r.s.last || '—') + '</td><td class="r"><b>' + f(r.s.cSale) + '</b></td><td class="r">' + f(r.s.eSale) + '</td>' +
         '<td>' + statusBadge(r.m.accountStatus) + '</td></tr>';
@@ -290,9 +290,9 @@
     var ft = document.getElementById('ptad-ftype').value, fr = document.getElementById('ptad-frep').value, fc = document.getElementById('ptad-fcamp').value;
     var shown = 0;
     document.querySelectorAll('#ptad-body .ptad-adv-row').forEach(function (tr) {
-      var comp = tr.getAttribute('data-company').toLowerCase(), rep = (tr.getAttribute('data-rep') || '').toLowerCase();
+      var comp = tr.getAttribute('data-company').toLowerCase(), rep = (tr.getAttribute('data-rep') || '').toLowerCase(), mno = (tr.getAttribute('data-mno') || '').toLowerCase();
       var ok = true;
-      if (q && comp.indexOf(q) < 0 && rep.indexOf(q) < 0) ok = false;
+      if (q && comp.indexOf(q) < 0 && rep.indexOf(q) < 0 && mno.indexOf(q) < 0) ok = false;
       if (ft && tr.getAttribute('data-type') !== ft) ok = false;
       if (fr && fr !== '(전체)' && (tr.getAttribute('data-rep') || '') !== fr) ok = false;
       if (fc === 'y' && tr.getAttribute('data-has') !== 'y') ok = false;
