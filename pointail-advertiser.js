@@ -288,6 +288,47 @@
     document.querySelectorAll('#ptad-modal [data-close]').forEach(function (b) { b.onclick = closeModal; });
     document.querySelectorAll('#ptad-modal .ptad-ct-edit').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openContact(b.getAttribute('data-company')); }; });
     document.querySelectorAll('#ptad-modal .ptad-adv-open').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openAdv(b.getAttribute('data-company')); }; });
+    document.querySelectorAll('#ptad-modal table').forEach(function (t) { makeSortable(t, null); });
+  }
+
+  function reApplyPag() {
+    var rows = document.querySelectorAll('#ptad-view .ptad-re-row');
+    rows.forEach(function (tr, i) { tr.style.display = i < reLimit ? '' : 'none'; });
+    var rmb = document.getElementById('ptad-re-more');
+    if (rmb) { var remain = rows.length - Math.min(reLimit, rows.length); rmb.style.display = remain > 0 ? '' : 'none'; rmb.textContent = '더보기 (+' + Math.min(20, remain) + ') · 남은 ' + remain + '개'; }
+  }
+
+  // ── 컬럼 머리글 클릭 정렬(⇅ ▲ ▼) ──
+  function cellSortVal(td) {
+    var raw = (td ? td.textContent : '').trim();
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return { num: null, str: raw };               // 날짜 → 연대순(문자열)
+    var txt = raw.replace(/[,\s원일개회%#★]/g, '');
+    if (txt !== '' && /^[-+]?\d/.test(txt) && !isNaN(parseFloat(txt))) return { num: parseFloat(txt), str: raw.toLowerCase() };
+    return { num: null, str: raw.toLowerCase() };
+  }
+  function makeSortable(table, afterSort) {
+    if (!table) return;
+    var ths = table.querySelectorAll('thead th');
+    ths.forEach(function (th, idx) {
+      if (th.__sortable || !th.textContent.trim()) return; th.__sortable = true;
+      th.style.cursor = 'pointer'; th.style.userSelect = 'none';
+      var ind = document.createElement('span'); ind.className = 'ptad-si'; ind.style.cssText = 'margin-left:3px;color:#b0b7c3;font-size:10px'; ind.textContent = '⇅'; th.appendChild(ind);
+      th.addEventListener('click', function () {
+        var tbody = table.querySelector('tbody'); if (!tbody) return;
+        var rows = [].slice.call(tbody.children).filter(function (r) { return r.tagName === 'TR' && r.children.length > idx; });
+        var dir = th.__dir === 'asc' ? 'desc' : 'asc'; th.__dir = dir;
+        ths.forEach(function (o) { if (o !== th) { o.__dir = null; var oi = o.querySelector('.ptad-si'); if (oi) { oi.textContent = '⇅'; oi.style.color = '#b0b7c3'; } } });
+        ind.textContent = dir === 'asc' ? '▲' : '▼'; ind.style.color = '#2563eb';
+        rows.sort(function (a, b) {
+          var va = cellSortVal(a.children[idx]), vb = cellSortVal(b.children[idx]), r;
+          if (va.num !== null && vb.num !== null) r = va.num - vb.num;
+          else r = va.str < vb.str ? -1 : (va.str > vb.str ? 1 : 0);
+          return dir === 'asc' ? r : -r;
+        });
+        rows.forEach(function (r) { tbody.appendChild(r); });
+        if (afterSort) afterSort();
+      });
+    });
   }
 
   function applyFilter() {
@@ -321,17 +362,10 @@
     if (document.getElementById('ptad-cnt')) applyFilter();
     // 재신청 관리 더보기
     var rmb = document.getElementById('ptad-re-more');
-    if (rmb) {
-      var reRows = host.querySelectorAll('.ptad-re-row');
-      var reApply = function () {
-        var sh = 0; reRows.forEach(function (tr, i) { tr.style.display = i < reLimit ? '' : 'none'; if (i < reLimit) sh++; });
-        var remain = reRows.length - Math.min(reLimit, reRows.length);
-        rmb.style.display = remain > 0 ? '' : 'none';
-        rmb.textContent = '더보기 (+' + Math.min(20, remain) + ') · 남은 ' + remain + '개';
-      };
-      rmb.onclick = function () { reLimit += 20; reApply(); };
-      reApply();
-    }
+    if (rmb) { rmb.onclick = function () { reLimit += 20; reApplyPag(); }; reApplyPag(); }
+    // 컬럼 머리글 클릭 정렬(⇅) — 현재 뷰의 모든 표
+    var sortCb = view === 'adv' ? function () { advLimit = 15; applyFilter(); } : (view === 'reapply' ? function () { reLimit = 15; reApplyPag(); } : null);
+    host.querySelectorAll('table').forEach(function (t) { makeSortable(t, sortCb); });
   }
 
   // ── 스타일 ──
