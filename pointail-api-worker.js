@@ -24,6 +24,8 @@
 
 const API_BASE = "https://apia-v2.storelink.io";
 const CAMPAIGN_SEARCH = "/pug/jp/campaigns/search";
+const ADVERTISER_SEARCH = "/pug/jp/advertiser/search";       // 광고주 회원 목록
+const SALES_MANAGER = "/stl/users/sales-manager/pointail";   // 영업담당자(번호→이름)
 const SIGN_IN = "/stl/users/sign-in";
 const REGISTER_SITE = "stl";
 const CACHE_TTL_SEC = 600;                 // 데이터 응답 캐시(10분)
@@ -87,6 +89,37 @@ async function fetchAllCampaigns(token, dateType, pageSize) {
   return { all, unauthorized };
 }
 
+// ── 영업담당자 번호→이름 매핑 ──
+async function fetchSalesManagers(token) {
+  try {
+    const res = await fetch(API_BASE + SALES_MANAGER, { headers: upstreamHeaders({ "X-Auth-Token": token }) });
+    if (!res.ok) return {};
+    const j = await res.json();
+    const users = (j.result && j.result.users) || [];
+    const map = {};
+    users.forEach(function (u) { if (u && u.userNo != null) map[u.userNo] = u.userNm || ""; });
+    return map;
+  } catch (e) { return {}; }
+}
+
+// ── 광고주 회원 전 페이지 수집 ──
+async function fetchAllAdvertisers(token, pageSize) {
+  const all = [];
+  let page = 1, totalPage = 1, guard = 0, unauthorized = false;
+  do {
+    const api = `${API_BASE}${ADVERTISER_SEARCH}?agreeAdvYn=&advMemberState=&salesManagerNo=&page=${page}&pageSize=${pageSize}`;
+    const res = await fetch(api, { headers: upstreamHeaders({ "X-Auth-Token": token }) });
+    if (res.status === 401) { unauthorized = true; break; }
+    if (!res.ok) throw new Error("회원 API 오류 " + res.status);
+    const body = await res.json();
+    const list = (body.result && body.result.advertisers) || [];
+    all.push.apply(all, list);
+    totalPage = (body.page && body.page.totalPage) || (list.length < pageSize ? page : page + 1);
+    page++; guard++;
+  } while (page <= totalPage && guard < 300);
+  return { all, unauthorized };
+}
+
 export default {
   async fetch(request, env, ctx) {
     const cors = {
@@ -134,6 +167,34 @@ export default {
       return json({ error: "허용되지 않은 메서드" }, 405, cors);
     }
 
+    // ── 광고주 회원 목록 (어드민 /pug/jp/advertiser/search) ──
+    //   GET /members  → 회원 전량 수집 + 대시보드 회원가입DB 스키마로 매핑
+    if (url.pathname === "/members") {
+      const autoM = !!(env.ADMIN_ID && env.ADMIN_PW);
+      const rawM = url.searchParams.get("raw") === "1";
+      const noCacheM = url.searchParams.get("refresh") === "1";
+      const cacheM = caches.default, cacheKeyM = new Request(url.toString(), request);
+      if (!noCacheM) { const hit = await cacheM.match(cacheKeyM); if (hit) return withCors(hit, cors); }
+      try {
+        let token;
+        if (autoM) token = await getAutoToken(env, ctx, false);
+        else token = (env.API_TOKEN || "").trim();
+        if (!token) return json({ error: "로그인 정보(ADMIN_ID/ADMIN_PW) 또는 API_TOKEN 시크릿이 필요합니다." }, 500, cors);
+        const pageSizeM = clampInt(url.searchParams.get("pageSize"), 200, 1, 200);
+        let sm = await fetchSalesManagers(token);
+        let r = await fetchAllAdvertisers(token, pageSizeM);
+        if (r.unauthorized && autoM) { token = await getAutoToken(env, ctx, true); sm = await fetchSalesManagers(token); r = await fetchAllAdvertisers(token, pageSizeM); }
+        if (r.unauthorized) return json({ error: "인증 실패(401): 로그인 정보(ADMIN_ID/ADMIN_PW)를 확인하세요." }, 401, cors);
+        const members = rawM ? r.all : r.all.map(function (a) { return mapMember(a, sm); });
+        const payload = { source: "storelink-advertiser", mode: autoM ? "auto-login" : "manual-token", fetchedAt: new Date().toISOString(), count: members.length, members };
+        const response = json(payload, 200, cors);
+        ctx.waitUntil(cacheM.put(cacheKeyM, json(payload, 200, Object.assign({}, cors, { "Cache-Control": "max-age=" + CACHE_TTL_SEC }))));
+        return response;
+      } catch (e) {
+        return json({ error: String((e && e.message) || e) }, 500, cors);
+      }
+    }
+
     const autoMode = !!(env.ADMIN_ID && env.ADMIN_PW);
 
     if (url.searchParams.get("diag") === "1") {
@@ -178,6 +239,7 @@ const TYPE_MAP    = { SHOPPING: "쇼핑", INFLUENCER: "인플루언서", PLACE: 
 const SVC_MAP     = { PUGSHOP: "퍼그샵", POINTAIL_BIZ: "포인테일 비즈", STORELINK: "스토어링크" };
 const STATE_MAP   = { SELECT_SUCCESS: "선정 완료", ADD_RECRUIT: "추가 모집중", REGISTER_WAITING: "등록 대기", REGISTER: "등록", REGISTER_CANCEL: "등록 취소", REGISTER_SUCCESS: "등록 완료", RECRUIT: "모집중", STOP: "일시 중지", CAMPAIGN_CLOSE: "캠페인 종료", CAMPAIGN_CANCEL: "캠페인 취소" };
 const MEMBER_MAP  = { COMMON_ADVERTISER: "일반 광고주", AGENCY: "대행사" };
+const MEMSTATE_MAP= { NORMAL: "정상", ACTIVE: "정상", STOP: "정지", SUSPEND: "정지", BLOCK: "정지", WITHDRAW: "탈퇴", LEAVE: "탈퇴", DORMANT: "휴면" };
 const COUNTRY_MAP = { KR: "한국", JP: "일본" };
 const PAYSTATE_MAP= { PAYMENT_WAIT: "결제대기", PAYMENT_SUCCESS: "결제완료", PAYMENT_CANCEL: "결제취소" };
 
@@ -230,6 +292,25 @@ function mapCampaign(c) {
     recruitStartAt:    dt(c.recruitBeginDt),
     createdAt:         dt(c.createDt),
     campaignNoText:    String(c.campaignNo),
+  };
+}
+
+// ── 광고주 회원 → 대시보드 회원가입DB(DB.member) 스키마 매핑 ──
+function mapMember(a, sm) {
+  sm = sm || {};
+  return {
+    memberNo:        a.advMemberNo != null ? a.advMemberNo : "",
+    joinDate:        dt(a.registerEndDate),
+    userId:          a.memberId || "",
+    memberName:      a.memberNm || "",
+    memberNameKana:  a.memberNmFurigana || "",
+    phone:           a.mobile || "",
+    joinType:        MEMBER_MAP[a.advMemberType] || "기타",
+    company:         a.corporateNm || "",
+    marketingConsent: a.agreeAdvYn === "Y" ? "동의" : "동의 안함",
+    accountStatus:   MEMSTATE_MAP[a.advMemberState] || a.advMemberState || "",
+    salesRep:        (a.salesManagerNo != null && sm[a.salesManagerNo]) ? sm[a.salesManagerNo] : "",
+    memberNoText:    String(a.advMemberNo != null ? a.advMemberNo : ""),
   };
 }
 

@@ -1,14 +1,13 @@
 /* ────────────────────────────────────────────────────────────
- *  포인테일 대시보드 – API 직접 동기화 모듈
- *  Cloudflare Worker(pointail-api) → 어드민 API에서 캠페인 전량 수집
- *  → 기존 제외 규칙(shouldExcludeRow) + 금액 규칙(applyRulesToRow, VAT ×1.1 / 일본 ×10)
- *    을 그대로 적용 → DB.camp 교체 → saveState + renderAll.
- *  구글시트 동기화는 그대로 두고, '⚡ API 동기화' 버튼을 추가한다(반자동).
- *  토큰 만료(약 12h) 시: 어드민 콘솔에서 토큰 재복사 → Cloudflare API_TOKEN Rotate 교체.
+ *  포인테일 대시보드 – API 직접 동기화 모듈 (캠페인 + 회원 통합)
+ *  ⚡ API 동기화 버튼 한 번으로 어드민 연동 DB를 모두 최신화한다.
+ *    · 캠페인DB(DB.camp)   ← Worker 루트(/) : /pug/jp/campaigns/search
+ *    · 회원가입DB(DB.member) ← Worker /members : /pug/jp/advertiser/search
+ *  기존 제외규칙(shouldExcludeRow) + 금액규칙(applyRulesToRow)을 그대로 적용.
+ *  회원 엔드포인트(/members) 미배포 시엔 회원만 건너뛰고 캠페인은 정상 동기화.
  * ──────────────────────────────────────────────────────────── */
 (function () {
   var WORKER = 'https://pointail-api.zeroho.workers.dev/';
-  // 시트와 동일하게 원본(콤마 없는) 값으로 담고, applyRulesToRow가 VAT/환율을 처리
   var MONEY = ['pointRevenue', 'contractSaleSum', 'contractMktCost', 'contractVat',
     'contractFinal', 'contractSalePrice', 'execMktAmount', 'execDiscount',
     'execNetAmount', 'execTotalAmount'];
@@ -25,42 +24,58 @@
     var orig = btn ? btn.innerHTML : '';
     if (btn) { btn.disabled = true; btn.textContent = '⏳ API 동기화 중...'; }
 
-    fetch(WORKER + '?pageSize=200&t=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(function (j) {
-        if (j.error) throw new Error(j.error);
-        var rows = (j.campaigns || []).map(function (c) {
-          var o = {}; for (var k in c) o[k] = c[k];
-          MONEY.forEach(function (m) { if (typeof o[m] === 'number') o[m] = String(o[m]); });
-          return o;
-        });
-        // 기존 파이프라인과 동일: 제외 필터 → 금액/환율 규칙 적용
-        DB.camp = rows
-          .filter(function (o) { return !shouldExcludeRow('camp', o); })
-          .map(function (o) { return applyRulesToRow('camp', o); });
+    Promise.all([
+      // 캠페인
+      fetch(WORKER + '?pageSize=200&t=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { if (!r.ok) throw new Error('캠페인 HTTP ' + r.status); return r.json(); }),
+      // 회원 (미배포면 조용히 건너뜀)
+      fetch(WORKER + 'members?pageSize=200&t=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : {}; })
+        .catch(function () { return {}; })
+    ]).then(function (res) {
+      var jc = res[0] || {}, jm = res[1] || {};
+      if (jc.error) throw new Error(jc.error);
 
-        if (typeof saveState === 'function') { saveState(); }
-        else {
-          try { var pd = JSON.parse(localStorage.getItem('pt_db') || '{}'); pd.camp = DB.camp; localStorage.setItem('pt_db', JSON.stringify(pd)); } catch (e) {}
-        }
-        if (typeof renderAll === 'function') { renderAll(); }
+      // ── 캠페인DB ──
+      var rows = (jc.campaigns || []).map(function (c) {
+        var o = {}; for (var k in c) o[k] = c[k];
+        MONEY.forEach(function (m) { if (typeof o[m] === 'number') o[m] = String(o[m]); });
+        return o;
+      });
+      DB.camp = rows
+        .filter(function (o) { return !shouldExcludeRow('camp', o); })
+        .map(function (o) { return applyRulesToRow('camp', o); });
 
-        var ts = nowTs();
-        try { localStorage.setItem('pt_api_last_sync', ts); } catch (e) {}
-        var el = document.getElementById('api-sync-time'); if (el) el.textContent = 'API ' + ts;
+      // ── 회원가입DB (/members 응답에 members 배열이 있을 때만) ──
+      var memberCount = -1; // -1 = 회원 동기화 안 함(미배포)
+      if (jm && Object.prototype.hasOwnProperty.call(jm, 'members') && Array.isArray(jm.members)) {
+        DB.member = jm.members
+          .map(function (o) { try { return applyRulesToRow('member', o); } catch (e) { return o; } })
+          .filter(function (o) { try { return !shouldExcludeRow('member', o); } catch (e) { return true; } });
+        memberCount = DB.member.length;
+      }
 
-        alert('✅ API 동기화 완료\n\n적용: ' + DB.camp.length.toLocaleString('ko-KR') +
-          '건  (원본 ' + (j.count || 0).toLocaleString('ko-KR') + '건, 제외 규칙 반영)\n' +
-          '수집 시각: ' + ts);
-      })
-      .catch(function (e) {
-        alert('⚠️ API 동기화 실패: ' + (e.message || e) +
-          '\n\n토큰이 만료됐을 수 있어요(유효 약 12시간).\n' +
-          '① 어드민 탭 콘솔에서 토큰 다시 복사\n' +
-          '② Cloudflare pointail-api → Settings → API_TOKEN → Rotate 로 교체\n' +
-          '③ 다시 [⚡ API 동기화] 클릭');
-      })
-      .then(function () { if (btn) { btn.disabled = false; btn.innerHTML = orig; } });
+      if (typeof saveState === 'function') { saveState(); }
+      else {
+        try { var pd = JSON.parse(localStorage.getItem('pt_db') || '{}'); pd.camp = DB.camp; if (memberCount >= 0) pd.member = DB.member; localStorage.setItem('pt_db', JSON.stringify(pd)); } catch (e) {}
+      }
+      if (typeof renderAll === 'function') { renderAll(); }
+
+      var ts = nowTs();
+      try { localStorage.setItem('pt_api_last_sync', ts); } catch (e) {}
+      var el = document.getElementById('api-sync-time'); if (el) el.textContent = 'API ' + ts;
+
+      alert('✅ API 동기화 완료\n\n' +
+        '캠페인 ' + DB.camp.length.toLocaleString('ko-KR') + '건' +
+        (memberCount >= 0
+          ? '\n회원 ' + memberCount.toLocaleString('ko-KR') + '건'
+          : '\n(회원 동기화는 Worker /members 배포 후 활성화됩니다)') +
+        '\n수집 시각: ' + ts);
+    }).catch(function (e) {
+      alert('⚠️ API 동기화 실패: ' + (e.message || e) +
+        '\n\n① 어드민 로그인 정보(Cloudflare ADMIN_ID/PW) 확인\n' +
+        '② 잠시 후 다시 [⚡ API 동기화] 클릭');
+    }).then(function () { if (btn) { btn.disabled = false; btn.innerHTML = orig; } });
   };
 
   // ── 헤더의 '구글시트 동기화' 옆에 '⚡ API 동기화' 버튼 추가 ──
@@ -72,7 +87,7 @@
     b.id = 'api-sync-btn';
     b.className = ref.className || 'btn btn-sm';
     b.textContent = '⚡ API 동기화';
-    b.title = '어드민 API에서 캠페인 데이터를 직접 불러옵니다 (구글시트 불필요 · 반자동)';
+    b.title = '어드민 API에서 캠페인 + 회원 데이터를 한 번에 불러옵니다';
     b.style.marginLeft = '6px';
     b.onclick = window.syncFromApi;
     ref.parentNode.insertBefore(b, ref.nextSibling);
