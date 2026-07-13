@@ -85,7 +85,11 @@
   function pullShared(cb) {
     fetch(EP + '?t=' + Date.now(), { cache: 'no-store' })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (o) { cb(o && typeof o === 'object' ? normalize(o) : null); })
+      .then(function (o) {
+        // Worker /marketing 미배포 시 캠페인 프록시 응답(campaigns/source)이 올 수 있음 → 로컬 보존
+        if (o && typeof o === 'object' && !('campaigns' in o) && !('source' in o)) cb(normalize(o));
+        else cb(null);
+      })
       .catch(function () { cb(null); });
   }
   function pushShared(x, cb) {
