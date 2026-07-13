@@ -13,6 +13,10 @@
  *     API_TOKEN = <X-Auth-Token>                   (선택·수동 폴백용)
  *  ※ ADMIN_ID/ADMIN_PW가 있으면 자동 로그인, 없으면 API_TOKEN(수동) 사용.
  *
+ *  ── KV 공유 저장 (Bindings: PT_KV) ──
+ *     /exclusions  GET/PUT  → 캠페인 수동 제외목록(excluded_camps)
+ *     /marketing   GET/PUT  → 마케팅 성과 입력 데이터(marketing_data)
+ *
  *  로그인: POST /stl/users/sign-in  body {userId, userPw, registerSite:"stl"}
  *          → result.token 을 X-Auth-Token 으로 사용.
  * ─────────────────────────────────────────────────────────────
@@ -107,6 +111,24 @@ export default {
         const body = await request.text();
         try { JSON.parse(body || "{}"); } catch (e) { return json({ error: "잘못된 JSON" }, 400, cors); }
         await env.PT_KV.put("excluded_camps", body || "{}");
+        return json({ ok: true }, 200, cors);
+      }
+      return json({ error: "허용되지 않은 메서드" }, 405, cors);
+    }
+
+    // ── 마케팅 성과 입력 데이터 (KV) : 여러 컴퓨터에서 공유 ──
+    //   GET  /marketing            → 저장된 마케팅 데이터(JSON) 반환
+    //   PUT  /marketing  body=JSON → 마케팅 데이터 저장(덮어쓰기)
+    if (url.pathname === "/marketing") {
+      if (!env.PT_KV) return json({ error: "KV(PT_KV) 바인딩이 설정되지 않았습니다." }, 500, cors);
+      if (request.method === "GET") {
+        const v = await env.PT_KV.get("marketing_data");
+        return new Response(v || "{}", { status: 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, cors) });
+      }
+      if (request.method === "PUT") {
+        const body = await request.text();
+        try { JSON.parse(body || "{}"); } catch (e) { return json({ error: "잘못된 JSON" }, 400, cors); }
+        await env.PT_KV.put("marketing_data", body || "{}");
         return json({ ok: true }, 200, cors);
       }
       return json({ error: "허용되지 않은 메서드" }, 405, cors);
