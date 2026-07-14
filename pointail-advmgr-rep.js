@@ -51,6 +51,7 @@
 
   // ── 담당자별 표(tbody) 재생성 ──
   function rebuildTable() {
+    if (!camps().length) return;                 // 캠페인 데이터 없으면 원본 유지(파괴 방지)
     var rows = document.querySelectorAll('#ptad-view .ptad-rep-row');
     if (!rows.length) return;
     // 이미 우리 행이면 스킵(무한 루프 방지)
@@ -61,6 +62,7 @@
     var by = aggregate();
     var list = Object.keys(by).map(function (k) { return by[k]; })
       .sort(function (a, b) { return b.cSale - a.cSale; });
+    if (!list.length) return;                     // 집계 결과 없으면 원본 유지
 
     var html = list.map(function (a) {
       var av = (a.rep || '?').slice(0, 1);
