@@ -140,6 +140,7 @@
   function start() {
     var host = document.getElementById('tab-advmgr') || document.body;
     try { new MutationObserver(schedule).observe(host, { childList: true, subtree: true }); } catch (e) {}
+    setInterval(function () { try { rebuildTable(); } catch (e) {} }, 1000);  // 자가복구: 렌더/데이터 타이밍 무관하게 적용
     schedule();
   }
   if (document.readyState !== 'loading') start();
