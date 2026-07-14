@@ -56,3 +56,24 @@
   if (document.readyState !== 'loading') start();
   else document.addEventListener('DOMContentLoaded', start);
 })();
+
+/* ────────────────────────────────────────────────────────────
+ *  [부트로더] index.html을 직접 수정하지 않고 신규 모듈을 동적 로드한다.
+ *  · pointail-rep-unify.js  — 캠페인 담당자 통일 전처리 (모든 대시보드 공통)
+ *  이미 index.html이 이 loadmore 스크립트를 로드하므로, 여기서 이어서 로드하면
+ *  별도의 <script> 태그 추가 없이 신규 모듈이 적용된다.
+ * ──────────────────────────────────────────────────────────── */
+(function () {
+  'use strict';
+  var MODS = ['pointail-rep-unify.js?v=1'];
+  function load(src) {
+    if (document.querySelector('script[data-ptmod="' + src + '"]')) return;
+    var s = document.createElement('script');
+    s.src = src;
+    s.setAttribute('data-ptmod', src);
+    document.body.appendChild(s);
+  }
+  function boot() { MODS.forEach(load); }
+  if (document.readyState !== 'loading') boot();
+  else document.addEventListener('DOMContentLoaded', boot);
+})();
