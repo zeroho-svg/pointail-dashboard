@@ -65,7 +65,7 @@
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
-  var MODS = ['pointail-rep-unify.js?v=1', 'pointail-advmgr-rep.js?v=4'];
+  var MODS = ['pointail-rep-unify.js?v=2', 'pointail-advmgr-rep.js?v=4'];
   function load(src) {
     if (document.querySelector('script[data-ptmod="' + src + '"]')) return;
     var s = document.createElement('script');

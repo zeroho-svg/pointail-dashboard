@@ -8,6 +8,12 @@
  *  매출 4종: (계약)전체=contractFinal · (계약)서비스=contractMktCost ·
  *            (실행)전체=execTotalAmount · (실행)서비스=execNetAmount
  *  업체 소통방식(단톡방/이메일/기타[메모], 중복선택)은 Cloudflare KV(/contacts)에 공유 저장.
+ *
+ *  [2026-07-15 중복 법인명 매칭 규칙]
+ *  같은 법인명으로 여러 회원 계정이 있을 때, 각 캠페인은
+ *  "신청일 이전에 가입한 계정 중 가장 최신 계정"에 1:1 귀속시킨다
+ *  (없으면 그 후 최초 가입 계정). → 매출 이중 집계 방지.
+ *  중복 법인명 행에는 ⚠ 중복N 배지 표시. 상세 모달은 회원번호 기준으로 연다.
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
@@ -28,11 +34,60 @@
   function todayStr() { var t = new Date(); return t.getFullYear() + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + ('0' + t.getDate()).slice(-2); }
   function daysBetween(a, b) { if (!a || !b) return null; var x = (new Date(b) - new Date(a)) / 86400000; return isFinite(x) ? Math.round(x) : null; }
 
-  function campsOf(company) { company = String(company || '').trim(); return camps().filter(function (c) { return String(c.corpName || '').trim() === company; }); }
+  // ── 중복 법인명 소유자 판정 (신청일 기준 당시 최신 계정) ──
+  var CORPIDX = null, CORPSRC = null, CORPLEN = -1;
+  function corpIndex() {
+    var ms = members();
+    if (CORPIDX && CORPSRC === ms && CORPLEN === ms.length) return CORPIDX;
+    var idx = {};
+    ms.forEach(function (m) {
+      var co = String(m.company || '').trim(); if (!co) return;
+      (idx[co] = idx[co] || []).push(m);
+    });
+    Object.keys(idx).forEach(function (k) {
+      idx[k].sort(function (a, b) { return String(a.joinDate || '').localeCompare(String(b.joinDate || '')); });
+    });
+    CORPIDX = idx; CORPSRC = ms; CORPLEN = ms.length;
+    return idx;
+  }
+  function isDupCorp(company) {
+    var l = corpIndex()[String(company || '').trim()];
+    return !!(l && l.length > 1);
+  }
+  // 캠페인 c의 소유 계정: 신청일 이전 가입 계정 중 가장 최신 → 없으면 그 후 최초 가입 계정
+  function ownerOf(c) {
+    var co = String(c.corpName || '').trim(); if (!co) return null;
+    var list = corpIndex()[co]; if (!list || !list.length) return null;
+    if (list.length === 1) return list[0];
+    var cd = d(c.createdAt);
+    var own = null;
+    for (var i = 0; i < list.length; i++) {
+      var jd = String(list[i].joinDate || '').slice(0, 10);
+      if (!cd || !jd || jd <= cd) own = list[i];   // joinDate 오름차순 → 마지막 통과 항목 = 당시 최신
+    }
+    return own || list[0];
+  }
+  function dupBadge(company) {
+    if (!isDupCorp(company)) return '';
+    var cnt = corpIndex()[String(company || '').trim()].length;
+    return ' <span title="동일 법인명 계정 ' + cnt + '개 — 캠페인은 신청일 기준 당시 최신 계정에 귀속됩니다" style="font-size:10px;padding:1px 6px;border-radius:20px;background:#fef3e2;color:#b45309;cursor:help">⚠ 중복' + cnt + '</span>';
+  }
+
+  function campsOf(m) {
+    var company = String((m && m.company) || '').trim();
+    if (!company) return [];
+    var dup = isDupCorp(company);
+    return camps().filter(function (c) {
+      if (String(c.corpName || '').trim() !== company) return false;
+      if (!dup) return true;
+      var o = ownerOf(c);
+      return !!(o && String(o.memberNo) === String(m.memberNo));
+    });
+  }
   function isActive(st) { return ['모집중', '선정 완료', '등록 대기', '추가 모집중', '등록 완료', '일시 중지'].indexOf(st) >= 0; }
 
   function advStats(m) {
-    var cs = campsOf(m.company);
+    var cs = campsOf(m);
     var cSale = 0, cSvc = 0, eSale = 0, eSvc = 0, active = 0;
     var dates = [];
     cs.forEach(function (c) {
@@ -127,7 +182,7 @@
 
     var body = rows.sort(function (a, b) { return b.s.cSale - a.s.cSale; }).map(function (r) {
       return '<tr class="ptad-click ptad-adv-row" data-company="' + esc(r.m.company) + '" data-mno="' + esc(r.m.memberNo || '') + '" data-type="' + esc(r.m.joinType || '') + '" data-rep="' + esc(r.m.salesRep || '') + '" data-has="' + (r.s.count > 0 ? 'y' : 'n') + '">' +
-        '<td><b>' + esc(r.m.company || '(법인명 없음)') + '</b> <span class="ptad-muted" style="font-size:11px">#' + esc(r.m.memberNo || '') + '</span> ' + typeBadge(r.m.joinType) + '</td>' +
+        '<td><b>' + esc(r.m.company || '(법인명 없음)') + '</b> <span class="ptad-muted" style="font-size:11px">#' + esc(r.m.memberNo || '') + '</span>' + dupBadge(r.m.company) + ' ' + typeBadge(r.m.joinType) + '</td>' +
         '<td>' + (r.m.salesRep ? esc(r.m.salesRep) : '<span class="ptad-muted">미배정</span>') + '</td>' +
         '<td>' + contactChips(r.m.company) + ' <button class="ptad-btn ptad-ct-edit" data-company="' + esc(r.m.company) + '" style="padding:2px 8px;font-size:11px;margin-top:2px">설정</button></td>' +
         '<td class="ptad-muted">' + esc(r.m.joinDate || '') + '</td>' +
@@ -138,7 +193,7 @@
         '<td class="r ptad-muted">' + f(r.s.eSvc) + '</td>' +
         '<td class="ptad-muted">' + (r.s.last || '—') + '</td>' +
         '<td class="c">' + statusBadge(r.m.accountStatus) + '</td>' +
-        '<td class="c"><button class="ptad-btn ptad-p ptad-adv-open" data-company="' + esc(r.m.company) + '">상세</button></td></tr>';
+        '<td class="c"><button class="ptad-btn ptad-p ptad-adv-open" data-company="' + esc(r.m.company) + '" data-mno="' + esc(r.m.memberNo || '') + '">상세</button></td></tr>';
     }).join('');
 
     return cards + '<div class="ptad-card"><h3>광고주 목록 <span class="ptad-muted" style="font-weight:400;font-size:12px">— 행 클릭 시 상세</span></h3>' +
@@ -195,8 +250,8 @@
       var reapply = r.s.count === 0 ? '<span class="ptad-muted">0회</span>' : r.s.count + '회';
       var act = r.s.count === 0 ? '첫 영업' : (r.s.since > 30 ? '이탈위험·재영업' : (r.s.since > 14 ? '재영업' : '유지'));
       var actColor = r.s.count === 0 ? '#185fa5' : (r.s.since > 30 ? '#c0392b' : (r.s.since > 14 ? '#185fa5' : '#8a94a6'));
-      return '<tr class="ptad-click ptad-adv-open ptad-re-row" data-company="' + esc(r.m.company) + '">' +
-        '<td><b>' + esc(r.m.company) + '</b> <span class="ptad-muted" style="font-size:11px">#' + esc(r.m.memberNo || '') + '</span></td>' +
+      return '<tr class="ptad-click ptad-adv-open ptad-re-row" data-company="' + esc(r.m.company) + '" data-mno="' + esc(r.m.memberNo || '') + '">' +
+        '<td><b>' + esc(r.m.company) + '</b> <span class="ptad-muted" style="font-size:11px">#' + esc(r.m.memberNo || '') + '</span>' + dupBadge(r.m.company) + '</td>' +
         '<td>' + (r.m.salesRep ? esc(r.m.salesRep) : '<span class="ptad-muted">미배정</span>') + '</td>' +
         '<td class="ptad-muted">' + (r.s.last || '<span class="ptad-muted">캠페인 없음</span>') + '</td>' +
         '<td class="r" style="color:' + bk[2] + '">' + (r.s.count ? (r.s.since + '일') : '—') + '</td>' +
@@ -210,8 +265,12 @@
   }
 
   // ── 모달 ──
-  function openAdv(company) {
-    var m = members().filter(function (x) { return x.company === company; })[0]; if (!m) return;
+  function openAdv(company, mno) {
+    var ms = members();
+    var m = null;
+    if (mno) m = ms.filter(function (x) { return String(x.memberNo) === String(mno); })[0];
+    if (!m) m = ms.filter(function (x) { return x.company === company; })[0];
+    if (!m) return;
     var s = advStats(m);
     var kpis = '<div class="ptad-cards">' +
       kpi('총 캠페인', s.count + '건', s.active + '건 진행중') +
@@ -231,7 +290,7 @@
       s.cs.slice().sort(function (a, b) { return d(a.createdAt).localeCompare(d(b.createdAt)); }).map(function (c) {
         return '<div class="ptad-tl-i">' + esc(d(c.createdAt)) + ' · ' + esc(c.campaignTitle || '') + ' ' + stChip(c.campaignStatus || '') + ' <b>' + won(c.contractFinal) + '</b></div>';
       }).join('') + '</div>';
-    var html = '<div class="ptad-mh"><div><div style="font-size:18px;font-weight:800">' + esc(m.company) + ' <span style="font-size:13px;color:#98a2b3">#' + esc(m.memberNo || '') + '</span> ' + typeBadge(m.joinType) + '</div>' +
+    var html = '<div class="ptad-mh"><div><div style="font-size:18px;font-weight:800">' + esc(m.company) + ' <span style="font-size:13px;color:#98a2b3">#' + esc(m.memberNo || '') + '</span>' + dupBadge(m.company) + ' ' + typeBadge(m.joinType) + '</div>' +
       '<div class="ptad-meta"><span>가입일 <b>' + esc(m.joinDate || '') + '</b></span><span>영업담당 <b>' + esc(m.salesRep || '미배정') + '</b></span><span>연락처 <b>' + esc(m.phone || '') + '</b></span><span>아이디 <b>' + esc(m.userId || '') + '</b></span><span>상태 <b>' + esc(m.accountStatus || '') + '</b></span><span>마케팅수신 <b>' + esc(m.marketingConsent || '') + '</b></span><span>소통 ' + contactChips(m.company) + ' <button class="ptad-btn ptad-ct-edit" data-company="' + esc(m.company) + '" style="padding:1px 7px;font-size:11px">설정</button></span></div></div>' +
       '<button class="ptad-x" data-close="1">×</button></div>' +
       '<div class="ptad-mb">' + kpis + '<h3 style="font-size:14px;margin:6px 0 8px">캠페인 진행 내역</h3>' + hist +
@@ -246,8 +305,8 @@
     var kpis = '<div class="ptad-cards">' + kpi('담당 광고주', advs.length + '개', contracted + '개 진행중') + kpi('총 캠페인', camps2 + '건') + '</div>' +
       '<div class="ptad-cards">' + kpi('(계약) 전체', won(cSale)) + kpi('(계약) 서비스', won(cSvc)) + kpi('(실행) 전체', won(eSale)) + kpi('(실행) 서비스', won(eSvc)) + '</div>';
     var rows = advs.map(function (r) {
-      return '<tr class="ptad-click ptad-adv-open" data-company="' + esc(r.m.company) + '">' +
-        '<td><b>' + esc(r.m.company) + '</b> <span class="ptad-muted" style="font-size:11px">#' + esc(r.m.memberNo || '') + '</span> ' + typeBadge(r.m.joinType) + '</td>' +
+      return '<tr class="ptad-click ptad-adv-open" data-company="' + esc(r.m.company) + '" data-mno="' + esc(r.m.memberNo || '') + '">' +
+        '<td><b>' + esc(r.m.company) + '</b> <span class="ptad-muted" style="font-size:11px">#' + esc(r.m.memberNo || '') + '</span>' + dupBadge(r.m.company) + ' ' + typeBadge(r.m.joinType) + '</td>' +
         '<td class="ptad-muted">' + esc(r.m.joinDate || '') + '</td><td class="c">' + r.s.count + '</td>' +
         '<td class="ptad-muted">' + (r.s.last || '—') + '</td><td class="r"><b>' + f(r.s.cSale) + '</b></td><td class="r">' + f(r.s.eSale) + '</td>' +
         '<td>' + statusBadge(r.m.accountStatus) + '</td></tr>';
@@ -287,7 +346,7 @@
   function wireModal() {
     document.querySelectorAll('#ptad-modal [data-close]').forEach(function (b) { b.onclick = closeModal; });
     document.querySelectorAll('#ptad-modal .ptad-ct-edit').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openContact(b.getAttribute('data-company')); }; });
-    document.querySelectorAll('#ptad-modal .ptad-adv-open').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openAdv(b.getAttribute('data-company')); }; });
+    document.querySelectorAll('#ptad-modal .ptad-adv-open').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openAdv(b.getAttribute('data-company'), b.getAttribute('data-mno')); }; });
     document.querySelectorAll('#ptad-modal table').forEach(function (t) { makeSortable(t, null); });
   }
 
@@ -354,8 +413,8 @@
   function wire() {
     var host = document.getElementById('ptad-view'); if (!host) return;
     host.querySelectorAll('.ptad-ct-edit').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openContact(b.getAttribute('data-company')); }; });
-    host.querySelectorAll('.ptad-adv-open').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openAdv(b.getAttribute('data-company')); }; });
-    host.querySelectorAll('.ptad-adv-row').forEach(function (tr) { tr.onclick = function () { openAdv(tr.getAttribute('data-company')); }; });
+    host.querySelectorAll('.ptad-adv-open').forEach(function (b) { b.onclick = function (e) { e.stopPropagation(); openAdv(b.getAttribute('data-company'), b.getAttribute('data-mno')); }; });
+    host.querySelectorAll('.ptad-adv-row').forEach(function (tr) { tr.onclick = function () { openAdv(tr.getAttribute('data-company'), tr.getAttribute('data-mno')); }; });
     host.querySelectorAll('.ptad-rep-row, .ptad-rep-open').forEach(function (el) { el.onclick = function (e) { e.stopPropagation(); openRep(el.getAttribute('data-rep')); }; });
     ['ptad-q', 'ptad-ftype', 'ptad-frep', 'ptad-fcamp'].forEach(function (id) { var el = document.getElementById(id); if (el) el.addEventListener('input', function () { advLimit = 15; applyFilter(); }); });
     var mb = document.getElementById('ptad-more'); if (mb) mb.onclick = function () { advLimit += 20; applyFilter(); };
