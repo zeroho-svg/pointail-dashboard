@@ -18,8 +18,8 @@
   function f(v) { return Math.round(n(v)).toLocaleString('ko-KR'); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (m) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[m]; }); }
   function isActive(st) { return ACTIVE.indexOf(st) >= 0; }
-  function camps() { return (window.DB && DB.camp) ? DB.camp : []; }
-  function members() { return (window.DB && DB.member) ? DB.member : []; }
+  function camps() { return (typeof DB !== 'undefined' && DB && DB.camp) ? DB.camp : ((window.DB && window.DB.camp) || []); }
+  function members() { return (typeof DB !== 'undefined' && DB && DB.member) ? DB.member : ((window.DB && window.DB.member) || []); }
   function repOf(c) { return String(c.salesManager == null ? '' : c.salesManager).trim() || '미배정'; }
 
   // ── 캠페인 기준 담당자별 집계 ──
