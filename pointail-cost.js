@@ -159,7 +159,7 @@
     }
     var anchor = null;
     [].slice.call(nav.querySelectorAll('.tab')).forEach(function (t) { if (/광고주 관리/.test(t.textContent || '')) anchor = t; });
-    var b1 = mk('cost', '💰 비용 정리'), b2 = mk('costin', '🧾 비용내역정리');
+    var b1 = mk('cost', '💰 손익 오버뷰'), b2 = mk('costin', '🧾 비용내역정리');
     try {
       if (anchor && anchor.parentNode) {
         anchor.parentNode.insertBefore(b1, anchor.nextSibling);
@@ -186,93 +186,145 @@
     if (id === 'cost') renderOverview(); else renderInput();
   }
 
-  // ── ① 비용 정리(오버뷰) ──
+  // ── ① 손익 오버뷰 (v3 · 2026-07-21 개편: 전월비 델타·분기 소계·비용 구성 TOP5·순매출+이익 듀얼 차트) ──
   function renderOverview() {
     var host = document.getElementById('tab-cost'); if (!host) return;
     var years = yearsAll();
     var sel = document.getElementById('ptc-year');
     var year = (sel && sel.value && years.indexOf(sel.value) >= 0) ? sel.value : years[0];
     var R = calc(year), rows = R.rows, T = R.T;
-    var maxAbs = 1;
-    rows.forEach(function (r) { maxAbs = Math.max(maxAbs, Math.abs(r.prof), r.net); });
-
-    var yopts = years.map(function (y) { return '<option value="' + esc(y) + '"' + (y === year ? ' selected' : '') + '>' + esc(y) + '년</option>'; }).join('');
     var margin = T.net > 0 ? Math.round(T.prof / T.net * 100) : 0;
 
-    function kpi(l, v, c, sub) {
-      return '<div style="flex:1;min-width:150px;background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);padding:12px 14px">' +
-        '<div style="font-size:11px;color:var(--tx2)">' + esc(l) + '</div>' +
-        '<div style="font-size:19px;font-weight:700;color:' + c + ';margin-top:3px">' + f(v) + '<span style="font-size:12px;font-weight:500">원</span></div>' +
-        (sub ? '<div style="font-size:10px;color:var(--tx2);margin-top:2px">' + sub + '</div>' : '') + '</div>';
+    // 최근월(데이터 있는 마지막 달)·전월 델타
+    var li = -1; rows.forEach(function (r, i) { if (r.gross || r.cost) li = i; });
+    var cur = li >= 0 ? rows[li] : null, prv = li > 0 ? rows[li - 1] : null;
+    function dpct(a, b) { if (!prv || !b) return null; var d = Math.round((a - b) / Math.abs(b) * 100); return isFinite(d) ? d : null; }
+    function chip(d, goodUp) {
+      if (d === null) return '';
+      var up = d >= 0, good = goodUp ? up : !up, col = good ? '#128a3a' : '#c0392b';
+      return ' <span style="font-size:11px;font-weight:600;color:' + col + '">' + (up ? '▲' : '▼') + Math.abs(d) + '%</span>';
     }
+    var maxSc = 1; rows.forEach(function (r) { maxSc = Math.max(maxSc, r.net, Math.abs(r.prof)); });
+    var yopts = years.map(function (y) { return '<option value="' + esc(y) + '"' + (y === year ? ' selected' : '') + '>' + esc(y) + '년</option>'; }).join('');
+
+    function kpi(l, v, c, sub) {
+      return '<div style="flex:1;min-width:175px;background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);padding:14px 16px">' +
+        '<div style="font-size:12px;color:var(--tx2);line-height:1.4">' + l + '</div>' +
+        '<div style="font-size:22px;font-weight:700;color:' + c + ';margin-top:4px;letter-spacing:-0.02em">' + f(v) + '<span style="font-size:13px;font-weight:500;color:var(--tx2)"> 원</span></div>' +
+        (sub ? '<div style="font-size:11.5px;color:var(--tx2);margin-top:4px;line-height:1.5">' + sub + '</div>' : '') + '</div>';
+    }
+    var curLabel = cur ? (cur.mo + '월') : '';
+    var kpis =
+      kpi('총매출 <span style="font-size:10px">(실행 전체)</span>', T.gross, C_SALE,
+        cur ? '최근월 ' + curLabel + ' ' + comp(cur.gross) + chip(dpct(cur.gross, prv && prv.gross), true) : '') +
+      kpi('순매출 <span style="font-size:10px">(실행 서비스)</span>', T.net, C_NET,
+        cur ? '최근월 ' + curLabel + ' ' + comp(cur.net) + chip(dpct(cur.net, prv && prv.net), true) : '') +
+      kpi('비용 합계', T.cost, C_COST,
+        '마케팅 ' + comp(T.mk) + ' · 경비&판촉 ' + comp(T.ex) + (cur ? chip(dpct(cur.cost, prv && prv.cost), false) : '')) +
+      kpi('영업이익 <span style="font-size:10px">(인건비 제외)</span>', T.prof, T.prof < 0 ? '#c0392b' : C_PROF,
+        '이익률 ' + margin + '%' + (cur ? ' · 최근월 ' + comp(cur.prof) + chip(dpct(cur.prof, prv && prv.prof), true) : ''));
 
     var bars = rows.map(function (r) {
-      var h = Math.round(Math.abs(r.prof) / maxAbs * 100);
+      var hN = Math.round(r.net / maxSc * 96), hP = Math.round(Math.abs(r.prof) / maxSc * 96);
       var neg = r.prof < 0;
-      return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0">' +
-        '<div style="font-size:9px;color:' + (neg ? '#c0392b' : 'var(--tx2)') + ';white-space:nowrap">' + (r.prof ? comp(r.prof) : '') + '</div>' +
-        '<div style="display:flex;align-items:flex-end;height:104px"><div title="영업이익 ' + f(r.prof) + '원" style="width:16px;height:' + Math.max(r.prof ? 3 : 0, h) + 'px;background:' + (neg ? '#c0392b' : C_PROF) + ';opacity:.85;border-radius:3px 3px 0 0"></div></div>' +
-        '<div style="font-size:10px;color:var(--tx2);border-top:1px solid var(--bd);width:100%;text-align:center;padding-top:4px">' + r.mo + '월</div>' +
-        '</div>';
+      return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:0">' +
+        '<div style="font-size:10px;line-height:1;color:' + (neg ? '#c0392b' : 'var(--tx2)') + ';white-space:nowrap">' + (r.prof ? comp(r.prof) : '') + '</div>' +
+        '<div style="display:flex;align-items:flex-end;gap:2px;height:100px">' +
+          '<div title="순매출 ' + f(r.net) + '원" style="width:9px;height:' + Math.max(r.net ? 2 : 0, hN) + 'px;background:#a9c7ec;border-radius:2px 2px 0 0"></div>' +
+          '<div title="영업이익 ' + f(r.prof) + '원" style="width:9px;height:' + Math.max(r.prof ? 2 : 0, hP) + 'px;background:' + (neg ? '#e24b4a' : C_PROF) + ';opacity:.9;border-radius:2px 2px 0 0"></div>' +
+        '</div>' +
+        '<div style="font-size:10.5px;color:var(--tx2);border-top:1px solid var(--bd);width:100%;text-align:center;padding-top:4px">' + r.mo + '월</div></div>';
     }).join('');
 
-    var trs = rows.map(function (r) {
+    function td(v, extra) { return '<td style="padding:8px 12px;text-align:right;' + (extra || '') + '">' + v + '</td>'; }
+    var trs = '', Q = { gross: 0, buy: 0, net: 0, mk: 0, ex: 0, cost: 0, prof: 0 }, qn = 1, qk;
+    rows.forEach(function (r, i) {
       var zero = !r.gross && !r.cost;
-      return '<tr style="border-top:1px solid var(--bd)' + (zero ? ';opacity:.45' : '') + '">' +
-        '<td style="padding:7px 10px;font-weight:600;white-space:nowrap">' + ymLabel(year, r.mo) + '</td>' +
-        '<td style="padding:7px 10px;text-align:right">' + f(r.gross) + '</td>' +
-        '<td style="padding:7px 10px;text-align:right;color:var(--tx2)">' + f(r.buy) + '</td>' +
-        '<td style="padding:7px 10px;text-align:right;font-weight:600;color:' + C_NET + '">' + f(r.net) + '</td>' +
-        '<td style="padding:7px 10px;text-align:right;color:' + C_COST + '">' + f(r.mk) + '</td>' +
-        '<td style="padding:7px 10px;text-align:right;color:' + C_COST + '">' + f(r.ex) + '</td>' +
-        '<td style="padding:7px 10px;text-align:right;font-weight:600">' + f(r.cost) + '</td>' +
-        '<td style="padding:7px 10px;text-align:right;font-weight:700;color:' + (r.prof < 0 ? '#c0392b' : C_PROF) + '">' + f(r.prof) + '</td>' +
-        '<td style="padding:7px 10px;text-align:right;color:var(--tx2)">' + (r.net > 0 ? Math.round(r.prof / r.net * 100) + '%' : '-') + '</td>' +
-        '</tr>';
-    }).join('');
+      trs += '<tr style="border-top:1px solid var(--bd)' + (zero ? ';opacity:.4' : '') + '">' +
+        '<td style="padding:8px 12px;font-weight:600;white-space:nowrap">' + ymLabel(year, r.mo) + '</td>' +
+        td(f(r.gross)) + td(f(r.buy), 'color:var(--tx2)') +
+        td('<b style="color:' + C_NET + '">' + f(r.net) + '</b>') +
+        td(f(r.mk), 'color:' + C_COST) + td(f(r.ex), 'color:' + C_COST) + td(f(r.cost), 'font-weight:600') +
+        td('<b style="color:' + (r.prof < 0 ? '#c0392b' : C_PROF) + '">' + f(r.prof) + '</b>') +
+        td(r.net > 0 ? Math.round(r.prof / r.net * 100) + '%' : '-', 'color:var(--tx2)') + '</tr>';
+      for (qk in Q) Q[qk] += r[qk];
+      if (i % 3 === 2) {
+        trs += '<tr style="border-top:1px solid var(--bd);background:var(--bg2);font-weight:600;font-size:11.5px">' +
+          '<td style="padding:7px 12px;color:var(--tx2)">' + qn + '분기 소계</td>' +
+          td(f(Q.gross)) + td(f(Q.buy), 'color:var(--tx2)') + td(f(Q.net)) + td(f(Q.mk)) + td(f(Q.ex)) + td(f(Q.cost)) +
+          td('<b style="color:' + (Q.prof < 0 ? '#c0392b' : C_PROF) + '">' + f(Q.prof) + '</b>') +
+          td(Q.net > 0 ? Math.round(Q.prof / Q.net * 100) + '%' : '-', 'color:var(--tx2)') + '</tr>';
+        qn++; for (qk in Q) Q[qk] = 0;
+      }
+    });
+
+    // 비용 구성 TOP5 (선택 연도)
+    var cmp = { marketing: {}, expense: {} };
+    (DATA.items || []).forEach(function (it) {
+      if (String(it.date || '').slice(0, 4) !== year) return;
+      var g = it.kind === 'expense' ? 'expense' : 'marketing';
+      var key = it.item || '(미분류)';
+      cmp[g][key] = (cmp[g][key] || 0) + n(it.amount);
+    });
+    function topList(obj, total, color) {
+      var ks = Object.keys(obj).sort(function (a, b) { return obj[b] - obj[a]; }).slice(0, 5);
+      if (!ks.length) return '<div style="font-size:12px;color:var(--tx2);padding:8px 0">올해 내역 없음</div>';
+      return ks.map(function (kk) {
+        var pct = total > 0 ? Math.round(obj[kk] / total * 100) : 0;
+        return '<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12.5px;line-height:1.5">' +
+          '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(kk) + '</span>' +
+          '<span style="color:var(--tx2);font-size:11px">' + pct + '%</span>' +
+          '<span style="min-width:90px;text-align:right;font-weight:600">' + f(obj[kk]) + '</span></div>' +
+          '<div style="height:4px;border-radius:2px;background:var(--bg2);overflow:hidden;margin-bottom:3px"><div style="height:100%;width:' + pct + '%;background:' + color + '"></div></div>';
+      }).join('');
+    }
 
     host.innerHTML =
-      '<div style="padding:16px 18px">' +
-        '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px">' +
-          '<h2 style="margin:0;font-size:17px">💰 포인테일 전체 비용 정리</h2>' +
-          '<select id="ptc-year" style="font-size:13px;font-weight:700;padding:4px 10px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg);cursor:pointer">' + yopts + '</select>' +
-          '<span style="font-size:11px;color:var(--tx2)">영업이익 = 순매출 − (마케팅비 + 경비&amp;판매촉진비) · 인건비 제외</span>' +
+      '<div style="padding:18px 20px;line-height:1.55">' +
+        '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px">' +
+          '<h2 style="margin:0;font-size:18px;letter-spacing:-0.01em">💰 손익 오버뷰</h2>' +
+          '<select id="ptc-year" style="font-size:13px;font-weight:700;padding:5px 10px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg);cursor:pointer">' + yopts + '</select>' +
+          '<span style="font-size:12px;color:var(--tx2)">영업이익 = 순매출 − (마케팅비 + 경비&amp;판매촉진비) · 인건비 제외</span>' +
           (remoteOK ? '' : '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#fef3e2;color:#b45309">⚠ 공유저장 미연결 — 이 PC에만 저장됨</span>') +
         '</div>' +
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">' +
-          kpi('총매출 (실행 전체)', T.gross, C_SALE) +
-          kpi('매입 (총매출−순매출)', T.buy, 'var(--tx2)') +
-          kpi('순매출 (실행 서비스)', T.net, C_NET) +
-          kpi('비용 합계', T.cost, C_COST, '마케팅비 ' + comp(T.mk) + ' · 경비&판촉 ' + comp(T.ex)) +
-          kpi('영업이익', T.prof, T.prof < 0 ? '#c0392b' : C_PROF, '이익률 ' + margin + '%') +
-        '</div>' +
-        '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);padding:14px;margin-bottom:16px">' +
-          '<div style="font-size:10px;color:var(--tx2);margin-bottom:10px;font-weight:500">' + esc(year) + '년 월별 영업이익</div>' +
+        '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">' + kpis + '</div>' +
+        '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);padding:16px;margin-bottom:18px">' +
+          '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:12px">' +
+            '<span style="font-size:12.5px;font-weight:600;color:var(--tx2)">' + esc(year) + '년 월별 순매출 · 영업이익</span>' +
+            '<span style="font-size:11px;color:var(--tx2)"><span style="display:inline-block;width:9px;height:9px;background:#a9c7ec;border-radius:2px;margin-right:4px"></span>순매출</span>' +
+            '<span style="font-size:11px;color:var(--tx2)"><span style="display:inline-block;width:9px;height:9px;background:' + C_PROF + ';border-radius:2px;margin-right:4px"></span>영업이익</span>' +
+            '<span style="font-size:11px;color:var(--tx2)"><span style="display:inline-block;width:9px;height:9px;background:#e24b4a;border-radius:2px;margin-right:4px"></span>적자</span>' +
+          '</div>' +
           '<div style="display:flex;align-items:flex-end;gap:6px">' + bars + '</div>' +
         '</div>' +
+        '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">' +
+          '<div style="flex:1;min-width:280px;background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);padding:14px 16px">' +
+            '<div style="font-size:12.5px;font-weight:600;color:var(--tx2);margin-bottom:8px">마케팅비 구성 TOP5 · 연간 ' + comp(T.mk) + '</div>' + topList(cmp.marketing, T.mk, C_COST) + '</div>' +
+          '<div style="flex:1;min-width:280px;background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);padding:14px 16px">' +
+            '<div style="font-size:12.5px;font-weight:600;color:var(--tx2);margin-bottom:8px">경비 &amp; 판매촉진비 구성 TOP5 · 연간 ' + comp(T.ex) + '</div>' + topList(cmp.expense, T.ex, '#b45309') + '</div>' +
+        '</div>' +
         '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);overflow:auto">' +
-          '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
-            '<thead><tr style="background:var(--bg2);font-size:11px;color:var(--tx2)">' +
-              '<th style="padding:8px 10px;text-align:left">월</th>' +
-              '<th style="padding:8px 10px;text-align:right">총매출</th>' +
-              '<th style="padding:8px 10px;text-align:right">매입</th>' +
-              '<th style="padding:8px 10px;text-align:right">순매출</th>' +
-              '<th style="padding:8px 10px;text-align:right">마케팅비</th>' +
-              '<th style="padding:8px 10px;text-align:right">경비&amp;판촉</th>' +
-              '<th style="padding:8px 10px;text-align:right">비용 합계</th>' +
-              '<th style="padding:8px 10px;text-align:right">영업이익</th>' +
-              '<th style="padding:8px 10px;text-align:right">이익률</th>' +
+          '<table style="width:100%;border-collapse:collapse;font-size:13px;font-variant-numeric:tabular-nums">' +
+            '<thead><tr style="background:var(--bg2);font-size:11.5px;color:var(--tx2)">' +
+              '<th style="padding:9px 12px;text-align:left">월</th>' +
+              '<th style="padding:9px 12px;text-align:right">총매출</th>' +
+              '<th style="padding:9px 12px;text-align:right">매입</th>' +
+              '<th style="padding:9px 12px;text-align:right">순매출</th>' +
+              '<th style="padding:9px 12px;text-align:right">마케팅비</th>' +
+              '<th style="padding:9px 12px;text-align:right">경비&amp;판촉</th>' +
+              '<th style="padding:9px 12px;text-align:right">비용 합계</th>' +
+              '<th style="padding:9px 12px;text-align:right">영업이익</th>' +
+              '<th style="padding:9px 12px;text-align:right">이익률</th>' +
             '</tr></thead><tbody>' + trs +
             '<tr style="border-top:2px solid var(--bd);background:var(--bg2);font-weight:700">' +
-              '<td style="padding:8px 10px">' + esc(year.slice(2)) + '년 합계</td>' +
-              '<td style="padding:8px 10px;text-align:right">' + f(T.gross) + '</td>' +
-              '<td style="padding:8px 10px;text-align:right">' + f(T.buy) + '</td>' +
-              '<td style="padding:8px 10px;text-align:right;color:' + C_NET + '">' + f(T.net) + '</td>' +
-              '<td style="padding:8px 10px;text-align:right;color:' + C_COST + '">' + f(T.mk) + '</td>' +
-              '<td style="padding:8px 10px;text-align:right;color:' + C_COST + '">' + f(T.ex) + '</td>' +
-              '<td style="padding:8px 10px;text-align:right">' + f(T.cost) + '</td>' +
-              '<td style="padding:8px 10px;text-align:right;color:' + (T.prof < 0 ? '#c0392b' : C_PROF) + '">' + f(T.prof) + '</td>' +
-              '<td style="padding:8px 10px;text-align:right">' + margin + '%</td>' +
+              '<td style="padding:9px 12px">' + esc(year.slice(2)) + '년 합계</td>' +
+              td(f(T.gross)) + td(f(T.buy)) +
+              td('<span style="color:' + C_NET + '">' + f(T.net) + '</span>') +
+              td('<span style="color:' + C_COST + '">' + f(T.mk) + '</span>') +
+              td('<span style="color:' + C_COST + '">' + f(T.ex) + '</span>') +
+              td(f(T.cost)) +
+              td('<span style="color:' + (T.prof < 0 ? '#c0392b' : C_PROF) + '">' + f(T.prof) + '</span>') +
+              td(margin + '%') +
             '</tr></tbody></table>' +
         '</div>' +
       '</div>';
