@@ -160,8 +160,12 @@
     var anchor = null;
     [].slice.call(nav.querySelectorAll('.tab')).forEach(function (t) { if (/광고주 관리/.test(t.textContent || '')) anchor = t; });
     var b1 = mk('cost', '💰 비용 정리'), b2 = mk('costin', '🧾 비용내역정리');
-    if (anchor && anchor.nextSibling) { nav.insertBefore(b1, anchor.nextSibling); nav.insertBefore(b2, b1.nextSibling); }
-    else { nav.appendChild(b1); nav.appendChild(b2); }
+    try {
+      if (anchor && anchor.parentNode) {
+        anchor.parentNode.insertBefore(b1, anchor.nextSibling);
+        b1.parentNode.insertBefore(b2, b1.nextSibling);
+      } else { nav.appendChild(b1); nav.appendChild(b2); }
+    } catch (e) { nav.appendChild(b1); nav.appendChild(b2); }
 
     var host = document.querySelector('.panel') ? document.querySelector('.panel').parentNode : document.body;
     ['cost', 'costin'].forEach(function (id) {
@@ -392,11 +396,12 @@
       fetch(SEED_URL + '?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); })
         .then(function (j) {
           var have = {};
-          (DATA.items || []).forEach(function (x) { have[[x.kind, x.date, x.item, x.amount, x.desc].join('|')] = 1; });
+          // 시트에 의도적으로 중복 기재된 건(작성자만 다름)도 살리기 위해 작성자까지 키에 포함
+          (DATA.items || []).forEach(function (x) { have[[x.kind, x.date, x.item, x.amount, x.desc, x.author].join('|')] = 1; });
           var added = 0;
           ['marketing', 'expense'].forEach(function (kd) {
             (j[kd] || []).forEach(function (x) {
-              var key = [kd, x.date, x.item, x.amount, x.desc].join('|');
+              var key = [kd, x.date, x.item, x.amount, x.desc, x.author || '(구글시트)'].join('|');
               if (have[key]) return;
               have[key] = 1; added++;
               DATA.items.push({ id: uid(), kind: kd, date: x.date, item: x.item, desc: x.desc, amount: n(x.amount), author: x.author || '(구글시트)', authorEmail: '', updatedAt: nowStr() });
