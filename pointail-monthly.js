@@ -23,6 +23,7 @@
   var LSK = 'pt_sec_collapse';
   var MN = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
   var C_EXEC = '#3498db', C_MKT = '#27ae60';
+  var C_KR = '#2563eb', C_JP = '#e11d48';   // 한국 / 일본 구분색
 
   function camps() { return (typeof DB !== 'undefined' && DB && DB.camp) ? DB.camp : []; }
   function sdDate(r) { try { return (typeof sd_date === 'function') ? (sd_date(r) || '') : String(r.createdAt || '').slice(0, 10); } catch (e) { return ''; } }
@@ -125,8 +126,8 @@
 
     // 월별 집계 (분기별과 동일 지표)
     var M = [], i;
-    for (i = 0; i < 12; i++) M.push({ cnt: 0, cRev: 0, cMkt: 0, eRev: 0, eMkt: 0 });
-    var yt = { cnt: 0, cRev: 0, cMkt: 0, eRev: 0, eMkt: 0 };
+    for (i = 0; i < 12; i++) M.push({ cnt: 0, kr: 0, jp: 0, cRev: 0, cMkt: 0, eRev: 0, eMkt: 0 });
+    var yt = { cnt: 0, kr: 0, jp: 0, cRev: 0, cMkt: 0, eRev: 0, eMkt: 0 };
     rows.forEach(function (r) {
       var d = sdDate(r);
       if (!d || d.slice(0, 4) !== year) return;
@@ -134,9 +135,12 @@
       if (!(mi >= 0 && mi < 12)) return;
       var a = sdVal(r, 'contractFinal'), b = sdVal(r, 'contractMktCost'),
           c = sdVat(r, 'execTotalAmount'), e = sdVat(r, 'execNetAmount');
+      var ctry = String(r.advertiserCountry == null ? '' : r.advertiserCountry).trim();
+      var isJP = /일본|japan|jp/i.test(ctry);
       var m = M[mi];
       m.cnt++; m.cRev += a; m.cMkt += b; m.eRev += c; m.eMkt += e;
       yt.cnt++; yt.cRev += a; yt.cMkt += b; yt.eRev += c; yt.eMkt += e;
+      if (isJP) { m.jp++; yt.jp++; } else { m.kr++; yt.kr++; }
     });
 
     var maxV = 1;
@@ -154,6 +158,8 @@
           '<span style="font-size:11px;font-weight:600;color:var(--tx2)">연도</span>' +
           '<select id="ptm-year" style="font-size:13px;font-weight:700;padding:4px 10px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg);color:var(--tx);cursor:pointer">' + yearOpts + '</select>' +
           '<span style="font-size:11px;color:var(--tx2)">캠페인 <b style="color:var(--tx)">' + f(yt.cnt) + '</b>건</span>' +
+          '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#eef2ff;color:' + C_KR + ';font-weight:600">🇰🇷 한국 ' + f(yt.kr) + '</span>' +
+          '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#fff1f2;color:' + C_JP + ';font-weight:600">🇯🇵 일본 ' + f(yt.jp) + '</span>' +
         '</div>' +
         '<div style="display:flex;gap:16px;flex-wrap:wrap;font-size:10px;color:var(--tx2)">' +
           '<span>연간 (계약) 전체 매출<br><b style="font-size:12px;color:var(--tx)">' + f(yt.cRev) + '</b>원</span>' +
@@ -181,7 +187,7 @@
     }
     var chart =
       '<div style="padding:14px">' +
-        '<div style="font-size:10px;color:var(--tx2);margin-bottom:10px;font-weight:500">월별 비교 — (실행) 전체 매출 · (실행) 마케팅 서비스 매출</div>' +
+        '<div style="font-size:10px;color:var(--tx2);margin-bottom:10px;font-weight:500">' + esc(year) + '년 월별 비교 — (실행) 전체 매출 · (실행) 마케팅 서비스 매출</div>' +
         '<div style="display:flex;align-items:flex-end;gap:6px">' + bars + '</div>' +
         '<div style="display:flex;gap:14px;margin-top:10px;font-size:10px;color:var(--tx2)">' +
           '<span><i style="display:inline-block;width:9px;height:9px;background:' + C_EXEC + ';border-radius:2px;margin-right:4px"></i>(실행) 전체 매출</span>' +
@@ -196,8 +202,10 @@
       var zero = m2.cnt === 0;
       trs +=
         '<tr style="border-top:1px solid var(--bd)' + (zero ? ';opacity:.45' : '') + '">' +
-          '<td style="padding:7px 10px;font-weight:600">' + MN[i] + '</td>' +
-          '<td style="padding:7px 10px;text-align:center">' + f(m2.cnt) + '</td>' +
+          '<td style="padding:7px 10px;font-weight:600;white-space:nowrap">' + esc(year.slice(2)) + '년 ' + (i + 1) + '월</td>' +
+          '<td style="padding:7px 10px;text-align:center;font-weight:600">' + f(m2.cnt) + '</td>' +
+          '<td style="padding:7px 10px;text-align:center;color:' + C_KR + '">' + (m2.kr ? f(m2.kr) : '-') + '</td>' +
+          '<td style="padding:7px 10px;text-align:center;color:' + C_JP + '">' + (m2.jp ? f(m2.jp) : '-') + '</td>' +
           '<td style="padding:7px 10px;text-align:right;font-weight:600">' + f(m2.cRev) + '</td>' +
           '<td style="padding:7px 10px;text-align:right;color:var(--tx2)">' + f(m2.cMkt) + '</td>' +
           '<td style="padding:7px 10px;text-align:right;font-weight:600;color:' + C_EXEC + '">' + f(m2.eRev) + '</td>' +
@@ -210,7 +218,9 @@
         '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
           '<thead><tr style="background:var(--bg2);font-size:11px;color:var(--tx2)">' +
             '<th style="padding:8px 10px;text-align:left">월</th>' +
-            '<th style="padding:8px 10px;text-align:center">캠페인</th>' +
+            '<th style="padding:8px 10px;text-align:center">캠페인 합계</th>' +
+            '<th style="padding:8px 10px;text-align:center;color:' + C_KR + '">🇰🇷 한국</th>' +
+            '<th style="padding:8px 10px;text-align:center;color:' + C_JP + '">🇯🇵 일본</th>' +
             '<th style="padding:8px 10px;text-align:right">(계약) 전체 매출</th>' +
             '<th style="padding:8px 10px;text-align:right">(계약) 마케팅 서비스</th>' +
             '<th style="padding:8px 10px;text-align:right">(실행) 전체 매출</th>' +
@@ -218,8 +228,10 @@
             '<th style="padding:8px 10px;text-align:right">연간 기여도</th>' +
           '</tr></thead><tbody>' + trs +
           '<tr style="border-top:2px solid var(--bd);background:var(--bg2);font-weight:700">' +
-            '<td style="padding:8px 10px">합계</td>' +
+            '<td style="padding:8px 10px">' + esc(year.slice(2)) + '년 합계</td>' +
             '<td style="padding:8px 10px;text-align:center">' + f(yt.cnt) + '</td>' +
+            '<td style="padding:8px 10px;text-align:center;color:' + C_KR + '">' + f(yt.kr) + '</td>' +
+            '<td style="padding:8px 10px;text-align:center;color:' + C_JP + '">' + f(yt.jp) + '</td>' +
             '<td style="padding:8px 10px;text-align:right">' + f(yt.cRev) + '</td>' +
             '<td style="padding:8px 10px;text-align:right">' + f(yt.cMkt) + '</td>' +
             '<td style="padding:8px 10px;text-align:right;color:' + C_EXEC + '">' + f(yt.eRev) + '</td>' +
