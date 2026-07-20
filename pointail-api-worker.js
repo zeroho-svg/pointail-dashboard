@@ -185,6 +185,24 @@ export default {
       return json({ error: "허용되지 않은 메서드" }, 405, cors);
     }
 
+    // ── 비용(마케팅비·경비&판매촉진비) 내역 (KV) : 여러 컴퓨터에서 공유 ──
+    //   GET  /costs            → 저장된 비용 내역(JSON) 반환
+    //   PUT  /costs  body=JSON → 비용 내역 저장(덮어쓰기)
+    if (url.pathname === "/costs") {
+      if (!env.PT_KV) return json({ error: "KV(PT_KV) 바인딩이 설정되지 않았습니다." }, 500, cors);
+      if (request.method === "GET") {
+        const v = await env.PT_KV.get("pointail_costs");
+        return new Response(v || "{}", { status: 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, cors) });
+      }
+      if (request.method === "PUT") {
+        const body = await request.text();
+        try { JSON.parse(body || "{}"); } catch (e) { return json({ error: "잘못된 JSON" }, 400, cors); }
+        await env.PT_KV.put("pointail_costs", body || "{}");
+        return json({ ok: true }, 200, cors);
+      }
+      return json({ error: "허용되지 않은 메서드" }, 405, cors);
+    }
+
     // ── 광고주 회원 목록 (어드민 /pug/jp/advertiser/search) ──
     //   GET /members  → 회원 전량 수집 + 대시보드 회원가입DB 스키마로 매핑
     if (url.pathname === "/members") {
