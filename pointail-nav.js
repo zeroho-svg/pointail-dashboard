@@ -16,6 +16,7 @@
   'use strict';
 
   var GROUPS = [
+    { key: 'home', label: '🏠 홈', ids: ['tab-btn-home'], panels: ['tab-home'] },
     { key: 'sales', label: '💼 영업', ids: ['tab-btn-dashboard', 'tab-btn-sales-perf', 'tab-btn-advmgr'], panels: ['tab-dashboard', 'tab-sales-perf', 'tab-advmgr'] },
     { key: 'mgmt', label: '📊 경영', ids: ['tab-btn-cost', 'tab-btn-sales-dash'], panels: ['tab-cost', 'tab-sales-dash'] },
     { key: 'mkt', label: '📣 마케팅', ids: ['tab-btn-meta'], panels: ['tab-meta'] },
@@ -33,7 +34,8 @@
     GROUPS.forEach(function (g) {
       var on = g.key === key;
       var gb = document.getElementById('ptnav-' + g.key); if (gb) gb.classList.toggle('on', on);
-      var row = document.getElementById('ptnavrow-' + g.key); if (row) row.classList.toggle('on', on);
+      var row = document.getElementById('ptnavrow-' + g.key);
+      if (row) row.classList.toggle('on', on && row.children.length > 1);   // 탭 1개짜리 그룹은 하위 행 생략
     });
     if (click) {
       var g = GROUPS.filter(function (x) { return x.key === key; })[0];
@@ -109,6 +111,13 @@
       var leftovers = tm.querySelectorAll('button');
       tm.style.display = leftovers.length ? '' : 'none';
       if (!leftovers.length) tm.style.display = 'none';
+    }
+
+    // 첫 진입 시 홈으로 랜딩(사용자가 이미 다른 탭을 눌렀으면 유지)
+    if (!ensure.__landed && document.getElementById('tab-btn-home')) {
+      ensure.__landed = true;
+      var act0 = document.querySelector('.panel.active');
+      if (!act0 || act0.id === 'tab-dashboard') select('home', true);
     }
     sync();
   }
