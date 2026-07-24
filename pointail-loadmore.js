@@ -65,7 +65,7 @@
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
-  var MODS = ['pointail-theme.js?v=1', 'pointail-home.js?v=1', 'pointail-nav.js?v=2', 'pointail-rep-unify.js?v=2', 'pointail-advmgr-rep.js?v=4', 'pointail-monthly.js?v=3', 'pointail-cost.js?v=3'];
+  var MODS = ['pointail-theme.js?v=1', 'pointail-home.js?v=1', 'pointail-nav.js?v=2', 'pointail-rep-unify.js?v=2', 'pointail-advmgr-rep.js?v=4', 'pointail-monthly.js?v=4', 'pointail-cost.js?v=3'];
   function load(src) {
     if (document.querySelector('script[data-ptmod="' + src + '"]')) return;
     var s = document.createElement('script');

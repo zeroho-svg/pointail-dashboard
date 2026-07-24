@@ -241,7 +241,10 @@
           '<td style="padding:7px 10px;font-weight:600;white-space:nowrap">' + esc(year.slice(2)) + '년 ' + (i + 1) + '월</td>' +
           '<td style="padding:7px 10px;text-align:center;color:' + C_KR + '">' + f(cumKR[i]) + '</td>' +
           '<td style="padding:7px 10px;text-align:center;color:' + C_JP + '">' + f(cumJP[i]) + '</td>' +
-          '<td style="padding:7px 10px;text-align:center;font-weight:600">' + ((newKR[i] + newJP[i]) ? ('+' + f(newKR[i] + newJP[i]) + ' <span style="font-size:10px;font-weight:400;color:var(--tx2)">(🇰🇷' + newKR[i] + ' 🇯🇵' + newJP[i] + ')</span>') : '-') + '</td>' +
+          '<td style="padding:7px 10px;text-align:center">' + ((newKR[i] + newJP[i])
+            ? ('<div style="font-size:15px;font-weight:700;color:#111">+' + f(newKR[i] + newJP[i]) + '</div>' +
+               '<div style="font-size:11px;margin-top:2px"><span style="color:' + C_KR + ';font-weight:600">🇰🇷' + newKR[i] + '</span> <span style="color:' + C_JP + ';font-weight:600">🇯🇵' + newJP[i] + '</span></div>')
+            : '<span style="color:var(--tx2)">-</span>') + '</td>' +
           '<td style="padding:7px 10px;text-align:center;border-left:1px solid var(--bd);font-weight:600">' + f(m2.cnt) + '</td>' +
           '<td style="padding:7px 10px;text-align:center;color:' + C_KR + '">' + (m2.kr ? f(m2.kr) : '-') + '</td>' +
           '<td style="padding:7px 10px;text-align:center;color:' + C_JP + '">' + (m2.jp ? f(m2.jp) : '-') + '</td>' +
@@ -254,8 +257,8 @@
     }
     var table =
       '<div style="overflow:auto;border-top:1px solid var(--bd)">' +
-        '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
-          '<thead><tr style="background:var(--bg2);font-size:11px;color:var(--tx2)">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+          '<thead><tr style="background:var(--bg2);font-size:12px;color:var(--tx2)">' +
             '<th style="padding:8px 10px;text-align:left">월</th>' +
             '<th style="padding:8px 10px;text-align:center;color:' + C_KR + '">누적 광고주<br>🇰🇷 한국</th>' +
             '<th style="padding:8px 10px;text-align:center;color:' + C_JP + '">누적 광고주<br>🇯🇵 일본</th>' +
@@ -273,7 +276,7 @@
             '<td style="padding:8px 10px">' + esc(year.slice(2)) + '년 합계</td>' +
             '<td style="padding:8px 10px;text-align:center;color:' + C_KR + '">' + f(cumKR[11]) + '</td>' +
             '<td style="padding:8px 10px;text-align:center;color:' + C_JP + '">' + f(cumJP[11]) + '</td>' +
-            '<td style="padding:8px 10px;text-align:center">+' + f(newTotY) + '</td>' +
+            '<td style="padding:8px 10px;text-align:center;font-size:15px">+' + f(newTotY) + '</td>' +
             '<td style="padding:8px 10px;text-align:center;border-left:1px solid var(--bd)">' + f(yt.cnt) + '</td>' +
             '<td style="padding:8px 10px;text-align:center;color:' + C_KR + '">' + f(yt.kr) + '</td>' +
             '<td style="padding:8px 10px;text-align:center;color:' + C_JP + '">' + f(yt.jp) + '</td>' +
