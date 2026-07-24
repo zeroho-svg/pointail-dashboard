@@ -102,6 +102,19 @@ async function fetchSalesManagers(token) {
   } catch (e) { return {}; }
 }
 
+// ── 포인테일 앱 회원 월별 통계 수집 (누적 totalMemberCnt · 신규 newMemberCnt) ──
+async function fetchAppMemberChart(token, beginDate, endDate) {
+  try {
+    const api = `${API_BASE}/pug/jp/dashboard/members/chart?timeUnit=MONTH&beginDate=${encodeURIComponent(beginDate)}&endDate=${encodeURIComponent(endDate)}`;
+    const res = await fetch(api, { headers: upstreamHeaders({ "X-Auth-Token": token }) });
+    if (res.status === 401) return { chart: [], unauthorized: true };
+    if (!res.ok) return { chart: [], unauthorized: false };
+    const j = await res.json();
+    const chart = (j.result && j.result.memberChart) || [];
+    return { chart, unauthorized: false };
+  } catch (e) { return { chart: [], unauthorized: false }; }
+}
+
 // ── 광고주 회원 전 페이지 수집 ──
 async function fetchAllAdvertisers(token, pageSize) {
   const all = [];
@@ -225,6 +238,32 @@ export default {
         const payload = { source: "storelink-advertiser", mode: autoM ? "auto-login" : "manual-token", fetchedAt: new Date().toISOString(), count: members.length, members };
         const response = json(payload, 200, cors);
         ctx.waitUntil(cacheM.put(cacheKeyM, json(payload, 200, Object.assign({}, cors, { "Cache-Control": "max-age=" + CACHE_TTL_SEC }))));
+        return response;
+      } catch (e) {
+        return json({ error: String((e && e.message) || e) }, 500, cors);
+      }
+    }
+
+    // ── 포인테일 앱 회원 월별 통계 (어드민 /pug/jp/dashboard/members/chart) ──
+    //   GET /app-members  → 월별 memberChart(누적 totalMemberCnt · 신규 newMemberCnt 등)
+    if (url.pathname === "/app-members") {
+      const autoA = !!(env.ADMIN_ID && env.ADMIN_PW);
+      const noCacheA = url.searchParams.get("refresh") === "1";
+      const cacheA = caches.default, cacheKeyA = new Request(url.toString(), request);
+      if (!noCacheA) { const hit = await cacheA.match(cacheKeyA); if (hit) return withCors(hit, cors); }
+      try {
+        const begin = url.searchParams.get("beginDate") || "2023-01-01";
+        const end = url.searchParams.get("endDate") || new Date().toISOString().slice(0, 10);
+        let token;
+        if (autoA) token = await getAutoToken(env, ctx, false);
+        else token = (env.API_TOKEN || "").trim();
+        if (!token) return json({ error: "로그인 정보(ADMIN_ID/ADMIN_PW) 또는 API_TOKEN 시크릿이 필요합니다." }, 500, cors);
+        let r = await fetchAppMemberChart(token, begin, end);
+        if (r.unauthorized && autoA) { token = await getAutoToken(env, ctx, true); r = await fetchAppMemberChart(token, begin, end); }
+        if (r.unauthorized) return json({ error: "인증 실패(401): 로그인 정보(ADMIN_ID/ADMIN_PW)를 확인하세요." }, 401, cors);
+        const payload = { source: "storelink-app-members", fetchedAt: new Date().toISOString(), beginDate: begin, endDate: end, memberChart: r.chart };
+        const response = json(payload, 200, cors);
+        ctx.waitUntil(cacheA.put(cacheKeyA, json(payload, 200, Object.assign({}, cors, { "Cache-Control": "max-age=" + CACHE_TTL_SEC }))));
         return response;
       } catch (e) {
         return json({ error: String((e && e.message) || e) }, 500, cors);

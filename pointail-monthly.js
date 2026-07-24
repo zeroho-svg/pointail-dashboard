@@ -24,6 +24,25 @@
   var MN = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
   var C_EXEC = '#3498db', C_MKT = '#27ae60';
   var C_KR = '#2563eb', C_JP = '#e11d48';   // 한국 / 일본 구분색
+  var C_APP = '#0891b2';                     // 포인테일 앱 회원 색
+  var WORKER = 'https://pointail-api.zeroho.workers.dev/';
+  var appMem = null;      // { 'YYYY-MM': { total, nw } }  포인테일(일본) 앱 회원 월별
+  var appMemPulled = false;
+  function pullAppMembers() {
+    if (appMemPulled) return; appMemPulled = true;
+    fetch(WORKER + 'app-members?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        var map = {};
+        if (j && j.memberChart) j.memberChart.forEach(function (m) {
+          var k = String(m.name || '').slice(0, 7);     // "2026-01"
+          if (k) map[k] = { total: +m.totalMemberCnt || 0, nw: +m.newMemberCnt || 0 };
+        });
+        appMem = map;
+        var sec = document.getElementById('ptm-section'); if (sec) { sec.__sig = null; try { render(); } catch (e) {} }
+      })
+      .catch(function () { appMem = {}; });
+  }
 
   function camps() { return (typeof DB !== 'undefined' && DB && DB.camp) ? DB.camp : []; }
   function members() { return (typeof DB !== 'undefined' && DB && DB.member) ? DB.member : []; }
@@ -160,6 +179,17 @@
     for (i2 = 0; i2 < 12; i2++) { ck += newKR[i2]; cj += newJP[i2]; cumKR.push(ck); cumJP.push(cj); }
     var newTotY = 0; for (i2 = 0; i2 < 12; i2++) newTotY += newKR[i2] + newJP[i2];
 
+    // 포인테일(일본) 앱 회원 월별 (누적 total · 신규 nw) — Worker /app-members
+    pullAppMembers();
+    var appTot = [], appNew = [], appEnd = 0, appNewSum = 0;
+    for (i2 = 0; i2 < 12; i2++) {
+      var mk = year + '-' + ('0' + (i2 + 1)).slice(-2);
+      var av = (appMem && appMem[mk]) ? appMem[mk] : null;
+      appTot.push(av ? av.total : null);
+      appNew.push(av ? av.nw : null);
+      if (av) { appEnd = av.total; appNewSum += av.nw; }
+    }
+
     // 월별 집계 (분기별과 동일 지표)
     var M = [], i;
     for (i = 0; i < 12; i++) M.push({ cnt: 0, kr: 0, jp: 0, cRev: 0, cMkt: 0, eRev: 0, eMkt: 0 });
@@ -245,7 +275,9 @@
             ? ('<div style="font-size:15px;font-weight:700;color:#111">+' + f(newKR[i] + newJP[i]) + '</div>' +
                '<div style="font-size:11px;margin-top:2px"><span style="color:' + C_KR + ';font-weight:600">🇰🇷' + newKR[i] + '</span> <span style="color:' + C_JP + ';font-weight:600">🇯🇵' + newJP[i] + '</span></div>')
             : '<span style="color:var(--tx2)">-</span>') + '</td>' +
-          '<td style="padding:7px 10px;text-align:center;border-left:1px solid var(--bd);font-weight:600">' + f(m2.cnt) + '</td>' +
+          '<td style="padding:7px 10px;text-align:center;border-left:1px solid var(--bd);color:' + C_APP + ';font-weight:600">' + (appTot[i] != null ? f(appTot[i]) : '<span style="color:var(--tx2)">…</span>') + '</td>' +
+          '<td style="padding:7px 10px;text-align:center">' + (appNew[i] != null ? '<span style="font-size:14px;font-weight:700;color:' + C_APP + '">+' + f(appNew[i]) + '</span>' : '<span style="color:var(--tx2)">…</span>') + '</td>' +
+          '<td style="padding:7px 10px;text-align:center;border-left:2px solid var(--bd);font-weight:600">' + f(m2.cnt) + '</td>' +
           '<td style="padding:7px 10px;text-align:center;color:' + C_KR + '">' + (m2.kr ? f(m2.kr) : '-') + '</td>' +
           '<td style="padding:7px 10px;text-align:center;color:' + C_JP + '">' + (m2.jp ? f(m2.jp) : '-') + '</td>' +
           '<td style="padding:7px 10px;text-align:right;font-weight:600">' + f(m2.cRev) + '</td>' +
@@ -263,7 +295,9 @@
             '<th style="padding:8px 10px;text-align:center;color:' + C_KR + '">누적 광고주<br>🇰🇷 한국</th>' +
             '<th style="padding:8px 10px;text-align:center;color:' + C_JP + '">누적 광고주<br>🇯🇵 일본</th>' +
             '<th style="padding:8px 10px;text-align:center">신규 가입<br>광고주</th>' +
-            '<th style="padding:8px 10px;text-align:center;border-left:1px solid var(--bd)">캠페인 합계</th>' +
+            '<th style="padding:8px 10px;text-align:center;border-left:1px solid var(--bd);color:' + C_APP + '">누적 앱회원<br><span style="font-weight:400">(포인테일)</span></th>' +
+            '<th style="padding:8px 10px;text-align:center;color:' + C_APP + '">신규 앱회원</th>' +
+            '<th style="padding:8px 10px;text-align:center;border-left:2px solid var(--bd)">캠페인 합계</th>' +
             '<th style="padding:8px 10px;text-align:center;color:' + C_KR + '">🇰🇷 한국</th>' +
             '<th style="padding:8px 10px;text-align:center;color:' + C_JP + '">🇯🇵 일본</th>' +
             '<th style="padding:8px 10px;text-align:right">(계약) 전체 매출</th>' +
@@ -277,7 +311,9 @@
             '<td style="padding:8px 10px;text-align:center;color:' + C_KR + '">' + f(cumKR[11]) + '</td>' +
             '<td style="padding:8px 10px;text-align:center;color:' + C_JP + '">' + f(cumJP[11]) + '</td>' +
             '<td style="padding:8px 10px;text-align:center;font-size:15px">+' + f(newTotY) + '</td>' +
-            '<td style="padding:8px 10px;text-align:center;border-left:1px solid var(--bd)">' + f(yt.cnt) + '</td>' +
+            '<td style="padding:8px 10px;text-align:center;border-left:1px solid var(--bd);color:' + C_APP + '">' + (appEnd ? f(appEnd) : '-') + '</td>' +
+            '<td style="padding:8px 10px;text-align:center;color:' + C_APP + ';font-size:15px">' + (appNewSum ? '+' + f(appNewSum) : '-') + '</td>' +
+            '<td style="padding:8px 10px;text-align:center;border-left:2px solid var(--bd)">' + f(yt.cnt) + '</td>' +
             '<td style="padding:8px 10px;text-align:center;color:' + C_KR + '">' + f(yt.kr) + '</td>' +
             '<td style="padding:8px 10px;text-align:center;color:' + C_JP + '">' + f(yt.jp) + '</td>' +
             '<td style="padding:8px 10px;text-align:right">' + f(yt.cRev) + '</td>' +
