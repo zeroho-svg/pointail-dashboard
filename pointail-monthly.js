@@ -26,6 +26,24 @@
   var C_KR = '#2563eb', C_JP = '#e11d48';   // 한국 / 일본 구분색
 
   function camps() { return (typeof DB !== 'undefined' && DB && DB.camp) ? DB.camp : []; }
+  function members() { return (typeof DB !== 'undefined' && DB && DB.member) ? DB.member : []; }
+  // 회원엔 국가 필드가 없어 캠페인 advertiserCountry(법인명 매칭)로 추론, 미매칭은 일본문자 휴리스틱
+  function isJpCtry(s) { return /일본|japan|jp/i.test(String(s || '')); }
+  function jpText(s) { s = String(s || ''); return /[぀-ヿ㐀-鿿]/.test(s) && !/[가-힣]/.test(s); }
+  function memberCountryMap() {
+    var byCorp = {};
+    camps().forEach(function (c) {
+      var co = String(c.corpName == null ? '' : c.corpName).trim(); if (!co) return;
+      var g = byCorp[co] || (byCorp[co] = { KR: 0, JP: 0 });
+      if (isJpCtry(c.advertiserCountry)) g.JP++; else g.KR++;
+    });
+    return function countryOf(m) {
+      var co = String(m.company == null ? '' : m.company).trim();
+      var g = co ? byCorp[co] : null;
+      if (g) return g.JP > g.KR ? 'JP' : 'KR';
+      return jpText(co) ? 'JP' : 'KR';
+    };
+  }
   function sdDate(r) { try { return (typeof sd_date === 'function') ? (sd_date(r) || '') : String(r.createdAt || '').slice(0, 10); } catch (e) { return ''; } }
   function sdVal(r, k) { try { return (typeof sd_val === 'function') ? sd_val(r, k) : (parseFloat(String(r[k] || 0).replace(/[,\s]/g, '')) || 0); } catch (e) { return 0; } }
   function sdVat(r, k) { try { return (typeof sd_vatIncl === 'function') ? sd_vatIncl(r, k) : sdVal(r, k); } catch (e) { return 0; } }
@@ -120,9 +138,27 @@
     var year = (selEl && selEl.value) ? selEl.value : ((qy && qy.value) ? qy.value : years[0]);
     if (years.indexOf(year) < 0) year = years[0];
 
-    var sig = rows.length + '|' + year;
+    var mem = members();
+    var sig = rows.length + '|' + mem.length + '|' + year;
     if (sec.__sig === sig) return;        // 데이터·연도 동일하면 재렌더 생략
     sec.__sig = sig;
+
+    // 광고주(회원) 신규 가입 / 누적 (국가별) — 가입일(joinDate) 기준
+    var ctryOf = memberCountryMap();
+    var newKR = [], newJP = [], i2;
+    for (i2 = 0; i2 < 12; i2++) { newKR.push(0); newJP.push(0); }
+    var baseKR = 0, baseJP = 0;   // 선택연도 이전까지 누적
+    mem.forEach(function (m) {
+      var d = String(m.joinDate || '').slice(0, 10); if (!d) return;
+      var y = d.slice(0, 4), isJP = ctryOf(m) === 'JP';
+      if (y < year) { if (isJP) baseJP++; else baseKR++; return; }
+      if (y !== year) return;
+      var mi = parseInt(d.slice(5, 7), 10) - 1; if (!(mi >= 0 && mi < 12)) return;
+      if (isJP) newJP[mi]++; else newKR[mi]++;
+    });
+    var cumKR = [], cumJP = [], ck = baseKR, cj = baseJP;
+    for (i2 = 0; i2 < 12; i2++) { ck += newKR[i2]; cj += newJP[i2]; cumKR.push(ck); cumJP.push(cj); }
+    var newTotY = 0; for (i2 = 0; i2 < 12; i2++) newTotY += newKR[i2] + newJP[i2];
 
     // 월별 집계 (분기별과 동일 지표)
     var M = [], i;
@@ -203,7 +239,10 @@
       trs +=
         '<tr style="border-top:1px solid var(--bd)' + (zero ? ';opacity:.45' : '') + '">' +
           '<td style="padding:7px 10px;font-weight:600;white-space:nowrap">' + esc(year.slice(2)) + '년 ' + (i + 1) + '월</td>' +
-          '<td style="padding:7px 10px;text-align:center;font-weight:600">' + f(m2.cnt) + '</td>' +
+          '<td style="padding:7px 10px;text-align:center;color:' + C_KR + '">' + f(cumKR[i]) + '</td>' +
+          '<td style="padding:7px 10px;text-align:center;color:' + C_JP + '">' + f(cumJP[i]) + '</td>' +
+          '<td style="padding:7px 10px;text-align:center;font-weight:600">' + ((newKR[i] + newJP[i]) ? ('+' + f(newKR[i] + newJP[i]) + ' <span style="font-size:10px;font-weight:400;color:var(--tx2)">(🇰🇷' + newKR[i] + ' 🇯🇵' + newJP[i] + ')</span>') : '-') + '</td>' +
+          '<td style="padding:7px 10px;text-align:center;border-left:1px solid var(--bd);font-weight:600">' + f(m2.cnt) + '</td>' +
           '<td style="padding:7px 10px;text-align:center;color:' + C_KR + '">' + (m2.kr ? f(m2.kr) : '-') + '</td>' +
           '<td style="padding:7px 10px;text-align:center;color:' + C_JP + '">' + (m2.jp ? f(m2.jp) : '-') + '</td>' +
           '<td style="padding:7px 10px;text-align:right;font-weight:600">' + f(m2.cRev) + '</td>' +
@@ -218,7 +257,10 @@
         '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
           '<thead><tr style="background:var(--bg2);font-size:11px;color:var(--tx2)">' +
             '<th style="padding:8px 10px;text-align:left">월</th>' +
-            '<th style="padding:8px 10px;text-align:center">캠페인 합계</th>' +
+            '<th style="padding:8px 10px;text-align:center;color:' + C_KR + '">누적 광고주<br>🇰🇷 한국</th>' +
+            '<th style="padding:8px 10px;text-align:center;color:' + C_JP + '">누적 광고주<br>🇯🇵 일본</th>' +
+            '<th style="padding:8px 10px;text-align:center">신규 가입<br>광고주</th>' +
+            '<th style="padding:8px 10px;text-align:center;border-left:1px solid var(--bd)">캠페인 합계</th>' +
             '<th style="padding:8px 10px;text-align:center;color:' + C_KR + '">🇰🇷 한국</th>' +
             '<th style="padding:8px 10px;text-align:center;color:' + C_JP + '">🇯🇵 일본</th>' +
             '<th style="padding:8px 10px;text-align:right">(계약) 전체 매출</th>' +
@@ -229,7 +271,10 @@
           '</tr></thead><tbody>' + trs +
           '<tr style="border-top:2px solid var(--bd);background:var(--bg2);font-weight:700">' +
             '<td style="padding:8px 10px">' + esc(year.slice(2)) + '년 합계</td>' +
-            '<td style="padding:8px 10px;text-align:center">' + f(yt.cnt) + '</td>' +
+            '<td style="padding:8px 10px;text-align:center;color:' + C_KR + '">' + f(cumKR[11]) + '</td>' +
+            '<td style="padding:8px 10px;text-align:center;color:' + C_JP + '">' + f(cumJP[11]) + '</td>' +
+            '<td style="padding:8px 10px;text-align:center">+' + f(newTotY) + '</td>' +
+            '<td style="padding:8px 10px;text-align:center;border-left:1px solid var(--bd)">' + f(yt.cnt) + '</td>' +
             '<td style="padding:8px 10px;text-align:center;color:' + C_KR + '">' + f(yt.kr) + '</td>' +
             '<td style="padding:8px 10px;text-align:center;color:' + C_JP + '">' + f(yt.jp) + '</td>' +
             '<td style="padding:8px 10px;text-align:right">' + f(yt.cRev) + '</td>' +
