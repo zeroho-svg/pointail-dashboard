@@ -141,7 +141,8 @@
         cat: catOf(c), sub: String(c.campaignType || ''),
         target: n(c.recruitCount), selected: n(c.selectedCount), applicant: n(c.applicantCount),
         status: String(c.campaignStatus || ''), round: String(c.roundInfo || ''),
-        country: String(c.advertiserCountry || ''), soon: soon, state: calStateOf(c, soon),
+        country: String(c.advertiserCountry || ''), agency: String(c.companyType || '') === '대행사',
+        soon: soon, state: calStateOf(c, soon),
         title: String(c.campaignTitle || ''), no: c.campaignNoText || String(c.campaignNo || '')
       });
     });
@@ -170,7 +171,7 @@
         (x.country ? '<span style="font-size:11px;color:#8a94a6">· ' + esc(x.country) + '</span>' : '') +
         (warn ? '<span style="font-size:11px;padding:2px 8px;border-radius:6px;background:' + warn.bg + ';color:' + warn.tx + ';margin-left:auto">' + warn.lab + ' ' + f(Math.max(0, x.target - x.selected)) + '명</span>' : '') +
       '</div>' +
-      (x.corp ? '<div style="font-size:11px;color:#98a2b3;margin-bottom:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.corp) + '</div>' : '') +
+      ((x.corp || x.agency) ? '<div style="font-size:11px;color:#98a2b3;margin-bottom:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.corp || '') + (x.agency ? ' <span style="color:#b45309;font-weight:600">(대행사)</span>' : '') + '</div>' : '') +
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px">' +
         '<div style="display:flex;align-items:center;gap:8px">' +
           '<span style="width:28px;height:28px;border-radius:50%;background:' + av + ';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">' + esc(ini2(x.rep)) + '</span>' +
@@ -215,7 +216,8 @@
         var mkk = x.state === 'short' ? ' 미달' : (x.state === 'behind' ? ' 부족' : '');
         grid += '<div style="display:flex;align-items:center;gap:3px;line-height:1.2;margin-top:2px">' +
             '<span style="width:6px;height:6px;border-radius:2px;background:' + cs.dot + ';flex:0 0 auto"></span>' +
-            '<span style="font-size:10px;font-weight:600;color:#1a1f29;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.brand) + '</span></div>' +
+            '<span style="font-size:10px;font-weight:600;color:#1a1f29;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.brand) + '</span>' +
+            (x.agency ? '<span style="font-size:9px;color:#b45309;font-weight:600;flex:0 0 auto">(대행사)</span>' : '') + '</div>' +
           '<div style="font-size:9.5px;margin:0 0 2px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:' + col + '">' + esc(x.rep) + '·' + amt + '명' + mkk + '</div>';
       });
       if (arr.length > 2) grid += '<div style="font-size:9.5px;color:#185fa5;margin-left:9px">+' + (arr.length - 2) + '건 더</div>';
