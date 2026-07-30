@@ -136,7 +136,7 @@
       var openFull = String(c.recruitStartAt || c.createdAt || '');
       var openTime = openFull.length >= 16 ? openFull.slice(11, 16) : '';   // HH:MM
       (byDay[od] = byDay[od] || []).push({
-        date: od, openTime: openTime,
+        date: od, openTime: openTime, openFull: openFull,
         brand: String(c.storeName || c.corpName || '').trim() || '(브랜드 미상)',
         corp: String(c.corpName || '').trim(),
         rep: String(c.salesManager || '미배정').trim() || '미배정',
@@ -147,6 +147,10 @@
         soon: soon, state: calStateOf(c, soon),
         title: String(c.campaignTitle || ''), no: c.campaignNoText || String(c.campaignNo || '')
       });
+    });
+    // 각 날짜의 캠페인을 오픈 시작 시간이 빠른 순으로 정렬(셀·카드 공통)
+    Object.keys(byDay).forEach(function (k) {
+      byDay[k].sort(function (a, b) { return String(a.openFull).localeCompare(String(b.openFull)); });
     });
     return byDay;
   }
