@@ -133,8 +133,10 @@
       if (CAL_CANCEL.indexOf(c.campaignStatus) >= 0) return;
       var od = calOpenDate(c); if (!od || od.slice(0, 7) !== mk) return;
       var soon = od > today;
+      var openFull = String(c.recruitStartAt || c.createdAt || '');
+      var openTime = openFull.length >= 16 ? openFull.slice(11, 16) : '';   // HH:MM
       (byDay[od] = byDay[od] || []).push({
-        date: od,
+        date: od, openTime: openTime,
         brand: String(c.storeName || c.corpName || '').trim() || '(브랜드 미상)',
         corp: String(c.corpName || '').trim(),
         rep: String(c.salesManager || '미배정').trim() || '미배정',
@@ -181,7 +183,7 @@
       '</div>' +
       (x.title ? '<div style="font-size:12.5px;font-weight:600;color:#48505c;margin-bottom:8px;line-height:1.4">' + esc(x.title) + '</div>' : '') +
       '<div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:#8a94a6">' +
-        '<span>📅 오픈 ' + esc(x.date) + '</span>' +
+        '<span>📅 오픈 ' + esc(x.date) + (x.openTime ? ' <b style="color:#48505c">' + esc(x.openTime) + '</b>' : '') + '</span>' +
         (x.round ? '<span>🔁 ' + esc(x.round) + ' 회차</span>' : '') +
         '<span>🙋 신청 ' + f(x.applicant) + '명</span>' +
       '</div>' +
