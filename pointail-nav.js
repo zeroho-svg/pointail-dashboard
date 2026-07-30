@@ -17,12 +17,13 @@
 
   var GROUPS = [
     { key: 'home', label: '🏠 홈', ids: ['tab-btn-home'], panels: ['tab-home'] },
+    // 경영: 하위 표시 순서 [손익 오버뷰, 매출 대시보드], 단 클릭 진입 기본은 매출 대시보드
+    { key: 'mgmt', label: '📊 경영', ids: ['tab-btn-cost', 'tab-btn-sales-dash'], defaultId: 'tab-btn-sales-dash', panels: ['tab-cost', 'tab-sales-dash'] },
     { key: 'sales', label: '💼 영업', ids: ['tab-btn-dashboard', 'tab-btn-sales-perf', 'tab-btn-advmgr'], panels: ['tab-dashboard', 'tab-sales-perf', 'tab-advmgr'] },
-    { key: 'mgmt', label: '📊 경영', ids: ['tab-btn-cost', 'tab-btn-sales-dash'], panels: ['tab-cost', 'tab-sales-dash'] },
     { key: 'mkt', label: '📣 마케팅', ids: ['tab-btn-meta'], panels: ['tab-meta'] },
     { key: 'admin', label: '⚙️ 관리', ids: ['tab-btn-costin', 'tg-data', 'tg-db', 'tg-settings'], panels: ['tab-costin', 'tab-upload', 'tab-add', 'tab-merged', 'tab-leads-t', 'tab-mem-t', 'tab-camp-t', 'tab-settings', 'tab-rules'] }
   ];
-  var cur = 'sales';
+  var cur = 'home';
 
   function groupOfPanel(pid) {
     for (var i = 0; i < GROUPS.length; i++) if (GROUPS[i].panels.indexOf(pid) >= 0) return GROUPS[i].key;
@@ -39,6 +40,11 @@
     });
     if (click) {
       var g = GROUPS.filter(function (x) { return x.key === key; })[0];
+      // 기본 진입 탭(defaultId)이 지정돼 있으면 우선 클릭
+      if (g.defaultId) {
+        var db = document.getElementById(g.defaultId);
+        if (db && db.classList.contains('tab')) { db.click(); return; }
+      }
       for (var i = 0; i < g.ids.length; i++) {
         var b = document.getElementById(g.ids[i]);
         if (b && b.classList.contains('tab')) { b.click(); return; }
@@ -105,6 +111,15 @@
       });
     });
 
+    // 경영 하위 탭 표시 순서 고정: [손익 오버뷰, 매출 대시보드]
+    var mrow = document.getElementById('ptnavrow-mgmt');
+    if (mrow) {
+      ['tab-btn-cost', 'tab-btn-sales-dash'].forEach(function (id) {
+        var b = document.getElementById(id);
+        if (b && b.parentElement === mrow) mrow.appendChild(b);   // ids 순서대로 재배치
+      });
+    }
+
     // 남은 원래 컨테이너는 숨김 (미지정 신규 버튼이 들어오면 다시 표시)
     var tm = nav.querySelector('.tabs-main');
     if (tm) {
@@ -139,7 +154,7 @@
     try { new MutationObserver(schedule).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
     setInterval(function () { try { ensure(); } catch (e) {} }, 1200);
     ensure();
-    select('sales', false);
+    select('home', false);
   }
   if (document.readyState !== 'loading') start();
   else document.addEventListener('DOMContentLoaded', start);

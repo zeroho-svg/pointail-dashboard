@@ -39,11 +39,55 @@
   };
   var C_SALE = '#3498db', C_NET = '#27ae60', C_COST = '#e67e22', C_PROF = '#8e44ad';
 
-  var DATA = { items: [] };   // {id,kind,date,item,desc,amount,author,authorEmail,updatedAt}
+  // 기본 채널(항목) 마스터 — 마케팅비: 광고 채널 / 경비&판촉: 운영·판촉
+  var DEFAULT_CH = {
+    marketing: ['메타(한국 리드)', '메타(일본 리드)', '메타(회원모집)', '라인 광고', '틱톡 광고', 'X(트위터) 광고', '구글 광고', '네이버 광고', '인플루언서 위탁비'],
+    expense: ['메세지 발송(알림톡·라인)', '판매촉진비', '플랫폼(구독료)', '기타 운영비']
+  };
+  var C_SALE2 = C_SALE;
+
+  var DATA = { items: [], channels: null };   // items:{id,kind,src,ch,item,week,date,amount,cur,raw,author,authorEmail,updatedAt}
   var remoteOK = false;
   var view = 'ov';            // 오버뷰 하위 상태
   var listKind = 'marketing'; // 입력탭 하위 상태
   var listYear = '';
+  // 비용내역정리(주간 도구) 상태
+  var inKind = 'marketing';   // 카테고리: marketing(마케팅비) / expense(경비&판촉)
+  var inView = 'week';        // week(주간 입력) / month(월별 집계)
+  var inMonth = null;         // 'YYYY-MM'
+  var selWeek = null;         // 주 key(월요일 ISO)
+  var inYear = '';
+
+  // ── 주차 생성: 2026-06 ~ 2031-12, 월~일, 주 소속월은 목요일 기준(HTML 도구와 동일) ──
+  function pad2(n) { return ('0' + n).slice(-2); }
+  function isoD(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+  function addD(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  var WEEKS = (function () {
+    var w = [], monday = new Date(2026, 5, 1), cnt = {};
+    while (true) {
+      var thu = addD(monday, 3), mk = thu.getFullYear() + '-' + pad2(thu.getMonth() + 1);
+      if (mk > '2031-12') break;
+      if (mk >= '2026-06') {
+        cnt[mk] = (cnt[mk] || 0) + 1;
+        var sun = addD(monday, 6);
+        w.push({ key: isoD(monday), monthKey: mk, weekNo: cnt[mk], thu: isoD(thu),
+          label: (monday.getMonth() + 1) + '/' + monday.getDate() + '~' + (sun.getMonth() + 1) + '/' + sun.getDate() });
+      }
+      monday = addD(monday, 7);
+    }
+    return w;
+  })();
+  var WEEK_MONTHS = (function () { var s = {}, a = []; WEEKS.forEach(function (w) { if (!s[w.monthKey]) { s[w.monthKey] = 1; a.push(w.monthKey); } }); return a; })();
+  function weekByKey(k) { return WEEKS.filter(function (w) { return w.key === k; })[0]; }
+  function channels(kind) {
+    if (!DATA.channels) DATA.channels = { marketing: DEFAULT_CH.marketing.slice(), expense: DEFAULT_CH.expense.slice() };
+    if (!DATA.channels[kind]) DATA.channels[kind] = DEFAULT_CH[kind].slice();
+    return DATA.channels[kind];
+  }
+  // 주간 항목 조회/upsert (kind·채널·주 단위, DATA.items에 저장 → 손익 오버뷰 자동 반영)
+  function weekItem(kind, ch, wk) {
+    return (DATA.items || []).filter(function (it) { return it.src === 'weekly' && it.kind === kind && it.ch === ch && it.week === wk; })[0];
+  }
 
   // ── 공통 유틸 ──
   function n(v) { return parseFloat(String(v == null ? 0 : v).replace(/[,\s₩¥]/g, '')) || 0; }
@@ -86,13 +130,14 @@
       .then(function (j) {
         // 캐치올(캠페인 응답)이 오면 /costs 미배포로 간주
         if (j && Object.prototype.hasOwnProperty.call(j, 'items') && Array.isArray(j.items)) {
-          DATA = { items: j.items }; remoteOK = true;
+          DATA = { items: j.items, channels: j.channels || null }; remoteOK = true;
         } else if (j && Object.keys(j).length === 0) {
-          DATA = { items: [] }; remoteOK = true;     // 빈 KV
+          DATA = { items: [], channels: null }; remoteOK = true;     // 빈 KV
         } else {
           remoteOK = false;
           try { DATA = JSON.parse(localStorage.getItem(LS) || '{"items":[]}'); } catch (e) { DATA = { items: [] }; }
         }
+        channels('marketing'); channels('expense');   // 채널 마스터 기본 시드
         cb && cb();
       })
       .catch(function () {
@@ -333,137 +378,222 @@
     if (ys) ys.addEventListener('change', renderOverview);
   }
 
-  // ── ② 비용내역정리(입력) ──
+  // ── ② 광고비 / 운영비 주간 및 월별 관리 (주간 채널별 입력 → 월 합산, 손익 오버뷰 연동) ──
   function renderInput() {
     var host = document.getElementById('tab-costin'); if (!host) return;
-    var years = ['(전체)'].concat(yearsAll());
-    if (!listYear) listYear = '(전체)';
+    if (!inMonth) {
+      var nowMk = new Date().getFullYear() + '-' + pad2(new Date().getMonth() + 1);
+      inMonth = (WEEK_MONTHS.indexOf(nowMk) >= 0) ? nowMk : WEEK_MONTHS[0];
+    }
+    if (!selWeek || !weekByKey(selWeek) || weekByKey(selWeek).monthKey !== inMonth) {
+      var fw = WEEKS.filter(function (w) { return w.monthKey === inMonth; })[0];
+      selWeek = fw ? fw.key : null;
+    }
+    var legacyN = (DATA.items || []).filter(function (it) { return it.src !== 'weekly'; }).length;
 
-    var list = (DATA.items || []).filter(function (it) { return it.kind === listKind; });
-    if (listYear !== '(전체)') list = list.filter(function (it) { return String(it.date || '').slice(0, 4) === listYear; });
-    list.sort(function (a, b) { return String(b.date || '').localeCompare(String(a.date || '')); });
-
-    var sum = 0; list.forEach(function (it) { sum += n(it.amount); });
-
-    // 항목별 소계
-    var byItem = {};
-    list.forEach(function (it) { byItem[it.item || '(미분류)'] = (byItem[it.item || '(미분류)'] || 0) + n(it.amount); });
-    var itemChips = Object.keys(byItem).sort(function (a, b) { return byItem[b] - byItem[a]; }).map(function (k) {
-      return '<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--bg2);border:1px solid var(--bd);white-space:nowrap">' + esc(k) + ' <b>' + comp(byItem[k]) + '</b></span>';
-    }).join('');
-
-    var opts = ITEMS[listKind].map(function (x) { return '<option>' + esc(x) + '</option>'; }).join('');
-    var yopts = years.map(function (y) { return '<option' + (y === listYear ? ' selected' : '') + '>' + esc(y) + '</option>'; }).join('');
-
-    var trs = list.map(function (it) {
-      return '<tr data-id="' + esc(it.id) + '" style="border-top:1px solid var(--bd)">' +
-        '<td style="padding:6px 9px;white-space:nowrap">' + esc(it.date || '') + '</td>' +
-        '<td style="padding:6px 9px;white-space:nowrap">' + esc(it.item || '') + '</td>' +
-        '<td style="padding:6px 9px">' + esc(it.desc || '') + '</td>' +
-        '<td style="padding:6px 9px;text-align:right;font-weight:600">' + f(it.amount) + '</td>' +
-        '<td style="padding:6px 9px;font-size:11px;color:var(--tx2);white-space:nowrap">' + esc(it.author || '') + (it.updatedAt ? '<br><span style="font-size:10px">' + esc(it.updatedAt) + '</span>' : '') + '</td>' +
-        '<td style="padding:6px 9px;text-align:center;white-space:nowrap">' +
-          '<button class="ptc-del" data-id="' + esc(it.id) + '" style="font-size:11px;padding:2px 8px;border:1px solid #f0c8c8;color:#c0392b;background:#fff6f6;border-radius:5px;cursor:pointer">삭제</button>' +
-        '</td></tr>';
-    }).join('');
-
-    host.innerHTML =
-      '<div style="padding:16px 18px">' +
-        '<div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px">' +
-          '<h2 style="margin:0;font-size:17px">🧾 비용내역정리</h2>' +
-          '<button class="ptc-kind" data-k="marketing" style="font-size:12px;padding:5px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--bd2);background:' + (listKind === 'marketing' ? '#111' : 'var(--bg)') + ';color:' + (listKind === 'marketing' ? '#fff' : 'var(--tx)') + '">마케팅비</button>' +
-          '<button class="ptc-kind" data-k="expense" style="font-size:12px;padding:5px 12px;border-radius:8px;cursor:pointer;border:1px solid var(--bd2);background:' + (listKind === 'expense' ? '#111' : 'var(--bg)') + ';color:' + (listKind === 'expense' ? '#fff' : 'var(--tx)') + '">경비 &amp; 판매촉진비</button>' +
-          '<select id="ptc-fy" style="font-size:12px;padding:4px 9px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg)">' + yopts + '</select>' +
-          '<span style="font-size:12px;color:var(--tx2)">' + list.length + '건 · 합계 <b style="color:var(--tx)">' + f(sum) + '</b>원</span>' +
-          (remoteOK
-            ? '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#e7f7ec;color:#128a3a">☁ 공유저장 켜짐</span>'
-            : '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#fef3e2;color:#b45309">⚠ 공유저장 미연결 (Worker /costs 배포 필요)</span>') +
-          '<button id="ptc-seed" style="font-size:11px;padding:4px 10px;border:1px solid var(--bd2);border-radius:6px;background:var(--bg);cursor:pointer">구글시트 과거내역 가져오기</button>' +
-        '</div>' +
-        (itemChips ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">' + itemChips + '</div>' : '') +
-        '<div style="background:var(--bg2);border:1px solid var(--bd);border-radius:var(--rl);padding:12px;margin-bottom:14px">' +
-          '<div style="font-size:11px;font-weight:600;color:var(--tx2);margin-bottom:8px">＋ ' + esc(KIND[listKind]) + ' 추가</div>' +
-          '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
-            '<input id="ptc-date" type="date" style="font-size:12px;padding:5px 8px;border:1px solid var(--bd2);border-radius:var(--r)">' +
-            '<select id="ptc-item" style="font-size:12px;padding:5px 8px;border:1px solid var(--bd2);border-radius:var(--r);background:var(--bg)">' + opts + '</select>' +
-            '<input id="ptc-desc" placeholder="내용" style="font-size:12px;padding:5px 8px;border:1px solid var(--bd2);border-radius:var(--r);min-width:240px;flex:1">' +
-            '<input id="ptc-amt" type="number" placeholder="금액(+VAT)" style="font-size:12px;padding:5px 8px;border:1px solid var(--bd2);border-radius:var(--r);width:140px">' +
-            '<button id="ptc-add" style="font-size:12px;padding:6px 16px;border:0;border-radius:var(--r);background:#111;color:#fff;cursor:pointer">추가</button>' +
-          '</div>' +
-        '</div>' +
-        '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);overflow:auto;max-height:60vh">' +
-          '<table style="width:100%;border-collapse:collapse;font-size:12px">' +
-            '<thead><tr style="background:var(--bg2);font-size:11px;color:var(--tx2);position:sticky;top:0">' +
-              '<th style="padding:8px 9px;text-align:left">거래일자</th>' +
-              '<th style="padding:8px 9px;text-align:left">항목</th>' +
-              '<th style="padding:8px 9px;text-align:left">내용</th>' +
-              '<th style="padding:8px 9px;text-align:right">비용(+VAT)</th>' +
-              '<th style="padding:8px 9px;text-align:left">최종 수정자</th>' +
-              '<th style="padding:8px 9px;text-align:center">관리</th>' +
-            '</tr></thead><tbody>' + (trs || '<tr><td colspan="6" style="padding:22px;text-align:center;color:var(--tx2)">내역이 없습니다. 위에서 추가해 주세요.</td></tr>') + '</tbody></table>' +
-        '</div>' +
+    // 헤더
+    var head =
+      '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">' +
+        '<h2 style="margin:0;font-size:17px">🧾 광고비 / 운영비 주간 및 월별 관리</h2>' +
+        seg('ptc-kind', [['marketing', '마케팅비(광고비)'], ['expense', '경비 &amp; 판매촉진비(운영)']], inKind) +
+        '<span style="width:1px;height:18px;background:var(--bd)"></span>' +
+        seg('ptc-view', [['week', '주간 입력'], ['month', '월별 집계']], inView) +
+        (remoteOK
+          ? '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#e7f7ec;color:#128a3a">☁ 공유저장 켜짐</span>'
+          : '<span style="font-size:11px;padding:2px 8px;border-radius:20px;background:#fef3e2;color:#b45309">⚠ 공유저장 미연결</span>') +
+        '<span style="margin-left:auto;font-size:11px;color:var(--tx2)">입력은 <b>원화(₩)</b> · 엔화(¥)는 ×10 환산 · 손익 오버뷰 자동 반영' +
+          (legacyN ? ' · 과거 건별 ' + legacyN + '건 반영중' : '') + '</span>' +
       '</div>';
 
+    host.innerHTML = '<div style="padding:16px 18px">' + head +
+      (inView === 'week' ? weekView() : monthView()) + '</div>';
     wireInput();
+  }
+
+  // 세그먼트 버튼
+  function seg(cls, opts, cur) {
+    return '<div style="display:inline-flex;gap:4px;background:var(--bg2);border:1px solid var(--bd);border-radius:9px;padding:3px">' +
+      opts.map(function (o) {
+        var on = o[0] === cur;
+        return '<button class="' + cls + '" data-v="' + o[0] + '" style="font-size:12px;font-weight:600;padding:5px 12px;border:0;border-radius:6px;cursor:pointer;background:' + (on ? '#111' : 'transparent') + ';color:' + (on ? '#fff' : 'var(--tx2)') + '">' + o[1] + '</button>';
+      }).join('') + '</div>';
+  }
+
+  // 채널 항목 관리 UI (추가)
+  function chManageBar() {
+    var chs = channels(inKind);
+    var chips = chs.map(function (nm, i) {
+      return '<span style="font-size:11px;padding:3px 8px;border-radius:20px;background:var(--bg);border:1px solid var(--bd);white-space:nowrap">' + esc(nm) +
+        ' <button class="ptc-chdel" data-i="' + i + '" title="항목 삭제" style="border:0;background:none;color:#c0392b;cursor:pointer;font-size:11px;padding:0 0 0 3px">×</button></span>';
+    }).join('');
+    return '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
+      '<span style="font-size:11px;color:var(--tx2);font-weight:600">항목</span>' + chips +
+      '<input id="ptc-newch" placeholder="새 항목명" style="font-size:11px;padding:4px 8px;border:1px solid var(--bd2);border-radius:6px;width:150px">' +
+      '<button id="ptc-addch" style="font-size:11px;padding:4px 10px;border:0;border-radius:6px;background:#2563eb;color:#fff;cursor:pointer">＋ 항목 추가</button>' +
+      '</div>';
+  }
+
+  // ── 주간 입력 뷰 ──
+  function weekView() {
+    var chs = channels(inKind);
+    var mw = WEEKS.filter(function (w) { return w.monthKey === inMonth; });
+    // 월 셀렉트(현재월 ±범위 전부 노출)
+    var mopts = WEEK_MONTHS.map(function (mk) { return '<option value="' + mk + '"' + (mk === inMonth ? ' selected' : '') + '>' + monthLbl(mk) + '</option>'; }).join('');
+    // 주 목록
+    var weekBtns = mw.map(function (w) {
+      var wt = chs.reduce(function (s, ch) { var it = weekItem(inKind, ch, w.key); return s + (it ? n(it.amount) : 0); }, 0);
+      var on = w.key === selWeek;
+      return '<button class="ptc-wk" data-wk="' + w.key + '" style="display:flex;justify-content:space-between;gap:8px;width:100%;padding:9px 11px;margin-bottom:5px;border-radius:8px;cursor:pointer;border:1px solid ' + (on ? '#111' : 'var(--bd)') + ';background:' + (on ? '#111' : 'var(--bg)') + ';color:' + (on ? '#fff' : 'var(--tx)') + ';font-size:12px;text-align:left">' +
+        '<span><b>' + w.weekNo + '주차</b> ' + w.label + '</span><span style="opacity:.85">' + (wt ? f(wt) : '—') + '</span></button>';
+    }).join('');
+    // 월 합계
+    var monTot = 0; mw.forEach(function (w) { chs.forEach(function (ch) { var it = weekItem(inKind, ch, w.key); if (it) monTot += n(it.amount); }); });
+
+    var w = weekByKey(selWeek);
+    var rowsH = '', wTot = 0;
+    if (w) {
+      rowsH = chs.map(function (ch) {
+        var it = weekItem(inKind, ch, w.key);
+        var raw = it ? (it.raw != null ? it.raw : it.amount) : '';
+        var cur = it ? (it.cur || 'KRW') : 'KRW';
+        var krw = it ? n(it.amount) : 0; wTot += krw;
+        return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd)">' +
+          '<div style="width:180px;font-size:13px;font-weight:600">' + esc(ch) + '</div>' +
+          '<input class="ptc-amt" data-ch="' + esc(ch) + '" type="number" min="0" placeholder="0" value="' + (raw === 0 ? '' : raw) + '" style="width:150px;text-align:right;font-size:13px;padding:7px 9px;border:1px solid var(--bd2);border-radius:8px">' +
+          '<div style="display:inline-flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden">' +
+            '<button class="ptc-cur" data-ch="' + esc(ch) + '" data-cur="KRW" style="font-size:12px;font-weight:700;padding:6px 11px;border:0;cursor:pointer;background:' + (cur === 'KRW' ? '#111' : '#fff') + ';color:' + (cur === 'KRW' ? '#fff' : '#7a8296') + '">₩</button>' +
+            '<button class="ptc-cur" data-ch="' + esc(ch) + '" data-cur="JPY" style="font-size:12px;font-weight:700;padding:6px 11px;border:0;cursor:pointer;background:' + (cur === 'JPY' ? '#111' : '#fff') + ';color:' + (cur === 'JPY' ? '#fff' : '#7a8296') + '">¥</button>' +
+          '</div>' +
+          (cur === 'JPY' ? '<span style="font-size:11px;color:var(--tx2)">×10 =</span>' : '') +
+          '<div style="margin-left:auto;font-size:13px;font-weight:600;color:' + (krw ? 'var(--tx)' : '#b7becb') + '">' + f(krw) + '원</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    return chManageBar() +
+      '<div style="display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:16px;align-items:start">' +
+        // 좌: 월/주 선택
+        '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);padding:14px">' +
+          '<select id="ptc-month" style="width:100%;font-size:14px;font-weight:700;padding:9px 11px;border:1px solid var(--bd2);border-radius:8px;margin-bottom:10px;background:var(--bg)">' + mopts + '</select>' +
+          weekBtns +
+          '<div style="margin-top:8px;padding-top:10px;border-top:1px solid var(--bd);display:flex;justify-content:space-between;font-size:13px"><span style="color:var(--tx2)">' + monthLbl(inMonth) + ' 합계</span><b>' + f(monTot) + '원</b></div>' +
+        '</div>' +
+        // 우: 채널 입력
+        '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);padding:16px">' +
+          '<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">' +
+            '<div style="font-size:14px;font-weight:800">' + (w ? monthLbl(w.monthKey) + ' ' + w.weekNo + '주차 (' + w.label + ')' : '주를 선택하세요') + '</div>' +
+            '<div style="font-size:13px;color:var(--tx2)">주 합계 <b style="color:var(--tx)">' + f(wTot) + '원</b></div>' +
+          '</div>' +
+          (rowsH || '<div style="color:var(--tx2);font-size:13px;padding:10px 0">항목이 없습니다. 위에서 추가하세요.</div>') +
+          '<div style="font-size:11px;color:var(--tx2);margin-top:10px">금액 입력 시 자동 저장되어 월별 집계·손익 오버뷰에 즉시 반영됩니다.</div>' +
+        '</div>' +
+      '</div>';
+  }
+
+  // ── 월별 집계 뷰 ──
+  function monthView() {
+    var chs = channels(inKind);
+    var yrs = (function () { var s = {}; WEEK_MONTHS.forEach(function (m) { s[m.slice(0, 4)] = 1; }); (DATA.items || []).forEach(function (it) { if (it.src === 'weekly' && it.week) { var w = weekByKey(it.week); if (w) s[w.monthKey.slice(0, 4)] = 1; } }); return Object.keys(s).sort(); })();
+    if (!inYear || yrs.indexOf(inYear) < 0) inYear = yrs.indexOf(String(new Date().getFullYear())) >= 0 ? String(new Date().getFullYear()) : yrs[0];
+    var yopts = yrs.map(function (y) { return '<option' + (y === inYear ? ' selected' : '') + '>' + y + '</option>'; }).join('');
+
+    // 월별 채널 합계
+    var months = []; for (var m = 1; m <= 12; m++) months.push(inYear + '-' + pad2(m));
+    var grid = {}, colTot = {}, maxMon = 1;
+    months.forEach(function (mk) { grid[mk] = {}; chs.forEach(function (ch) { grid[mk][ch] = 0; }); });
+    (DATA.items || []).forEach(function (it) {
+      if (it.src !== 'weekly' || it.kind !== inKind) return;
+      var w = weekByKey(it.week); if (!w || w.monthKey.slice(0, 4) !== inYear) return;
+      if (grid[w.monthKey] && chs.indexOf(it.item) >= 0) grid[w.monthKey][it.item] += n(it.amount);
+    });
+    months.forEach(function (mk) { var t = 0; chs.forEach(function (ch) { t += grid[mk][ch]; colTot[ch] = (colTot[ch] || 0) + grid[mk][ch]; }); grid[mk].__t = t; if (t > maxMon) maxMon = t; });
+    var yearTot = 0; months.forEach(function (mk) { yearTot += grid[mk].__t; });
+
+    // 바 차트
+    var bars = months.map(function (mk) {
+      var t = grid[mk].__t, h = Math.round(t / maxMon * 120);
+      return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0">' +
+        '<div style="font-size:9px;color:var(--tx2);white-space:nowrap">' + (t ? comp(t) : '') + '</div>' +
+        '<div style="display:flex;align-items:flex-end;height:122px"><div title="' + f(t) + '원" style="width:20px;height:' + Math.max(t ? 3 : 0, h) + 'px;background:' + (inKind === 'marketing' ? C_COST : '#8e44ad') + ';opacity:.85;border-radius:3px 3px 0 0"></div></div>' +
+        '<div style="font-size:10px;color:var(--tx2);border-top:1px solid var(--bd);width:100%;text-align:center;padding-top:3px">' + parseInt(mk.slice(5), 10) + '월</div></div>';
+    }).join('');
+
+    // 표
+    var thead = '<tr style="background:var(--bg2);font-size:11px;color:var(--tx2)"><th style="padding:8px 9px;text-align:left">월</th>' +
+      chs.map(function (ch) { return '<th style="padding:8px 9px;text-align:right;white-space:nowrap">' + esc(ch) + '</th>'; }).join('') +
+      '<th style="padding:8px 9px;text-align:right">합계</th></tr>';
+    var body = months.map(function (mk) {
+      var zero = grid[mk].__t === 0;
+      return '<tr style="border-top:1px solid var(--bd)' + (zero ? ';opacity:.4' : '') + '"><td style="padding:7px 9px;font-weight:600;white-space:nowrap">' + monthLbl(mk) + '</td>' +
+        chs.map(function (ch) { return '<td style="padding:7px 9px;text-align:right">' + (grid[mk][ch] ? f(grid[mk][ch]) : '-') + '</td>'; }).join('') +
+        '<td style="padding:7px 9px;text-align:right;font-weight:700">' + (grid[mk].__t ? f(grid[mk].__t) : '-') + '</td></tr>';
+    }).join('');
+    var foot = '<tr style="border-top:2px solid var(--bd);background:var(--bg2);font-weight:700"><td style="padding:8px 9px">' + inYear.slice(2) + '년 합계</td>' +
+      chs.map(function (ch) { return '<td style="padding:8px 9px;text-align:right">' + f(colTot[ch] || 0) + '</td>'; }).join('') +
+      '<td style="padding:8px 9px;text-align:right">' + f(yearTot) + '</td></tr>';
+
+    return '<div style="display:flex;gap:10px;align-items:center;margin-bottom:12px"><span style="font-size:12px;font-weight:600;color:var(--tx2)">연도</span>' +
+        '<select id="ptc-year2" style="font-size:13px;font-weight:700;padding:5px 11px;border:1px solid var(--bd2);border-radius:8px;background:var(--bg)">' + yopts + '</select>' +
+        '<span style="font-size:12px;color:var(--tx2)">' + monthLbl(inYear + '-01').slice(0, -3) + ' ' + KIND[inKind] + ' 합계 <b style="color:var(--tx)">' + f(yearTot) + '원</b></span></div>' +
+      '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);padding:14px;margin-bottom:14px">' +
+        '<div style="font-size:11px;color:var(--tx2);margin-bottom:8px;font-weight:500">' + inYear + '년 월별 ' + KIND[inKind] + ' 추이</div>' +
+        '<div style="display:flex;align-items:flex-end;gap:6px">' + bars + '</div></div>' +
+      '<div style="background:var(--bg);border:1px solid var(--bd);border-radius:var(--rl);overflow:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead>' + thead + '</thead><tbody>' + body + foot + '</tbody></table></div>';
+  }
+
+  function monthLbl(mk) { var p = String(mk).split('-'); return p[0].slice(2) + '년 ' + parseInt(p[1], 10) + '월'; }
+
+  var pendingCur = {};   // 금액 입력 전 통화 선택 임시 보관 (key: week|ch)
+  function saveNow(msg) { push(function (ok) { if (msg) toast(msg + (ok ? '' : ' (이 PC에만)'), !ok); }); }
+
+  function setAmount(ch, raw) {
+    var w = weekByKey(selWeek); if (!w) return;
+    var it = weekItem(inKind, ch, selWeek);
+    var key = selWeek + '|' + ch;
+    var cur = it ? (it.cur || 'KRW') : (pendingCur[key] || 'KRW');
+    var krw = cur === 'JPY' ? raw * 10 : raw;
+    var u = me();
+    if (raw > 0) {
+      if (it) { it.amount = krw; it.raw = raw; it.cur = cur; it.author = u.name; it.authorEmail = u.email; it.updatedAt = nowStr(); }
+      else DATA.items.push({ id: uid(), kind: inKind, src: 'weekly', ch: ch, item: ch, week: selWeek, date: w.thu, amount: krw, cur: cur, raw: raw, author: u.name, authorEmail: u.email, updatedAt: nowStr() });
+    } else if (it) { DATA.items = DATA.items.filter(function (x) { return x.id !== it.id; }); }
+    saveNow(); renderInput();
+  }
+  function setCur(ch, cur) {
+    var key = selWeek + '|' + ch;
+    pendingCur[key] = cur;
+    var it = weekItem(inKind, ch, selWeek);
+    if (it) { it.cur = cur; var raw = it.raw != null ? it.raw : it.amount; it.raw = raw; it.amount = cur === 'JPY' ? n(raw) * 10 : n(raw); it.updatedAt = nowStr(); saveNow(); }
+    renderInput();
   }
 
   function wireInput() {
     var host = document.getElementById('tab-costin'); if (!host) return;
-    host.querySelectorAll('.ptc-kind').forEach(function (b) {
-      b.onclick = function () { listKind = b.getAttribute('data-k'); renderInput(); };
-    });
-    var fy = document.getElementById('ptc-fy');
-    if (fy) fy.onchange = function () { listYear = fy.value; renderInput(); };
+    host.querySelectorAll('.ptc-kind').forEach(function (b) { b.onclick = function () { inKind = b.getAttribute('data-v'); selWeek = null; renderInput(); }; });
+    host.querySelectorAll('.ptc-view').forEach(function (b) { b.onclick = function () { inView = b.getAttribute('data-v'); renderInput(); }; });
+    var ms = document.getElementById('ptc-month'); if (ms) ms.onchange = function () { inMonth = ms.value; selWeek = null; renderInput(); };
+    var ys = document.getElementById('ptc-year2'); if (ys) ys.onchange = function () { inYear = ys.value; renderInput(); };
+    host.querySelectorAll('.ptc-wk').forEach(function (b) { b.onclick = function () { selWeek = b.getAttribute('data-wk'); renderInput(); }; });
+    host.querySelectorAll('.ptc-amt').forEach(function (inp) { inp.onchange = function () { setAmount(inp.getAttribute('data-ch'), parseFloat(inp.value) || 0); }; });
+    host.querySelectorAll('.ptc-cur').forEach(function (b) { b.onclick = function () { setCur(b.getAttribute('data-ch'), b.getAttribute('data-cur')); }; });
 
-    var add = document.getElementById('ptc-add');
-    if (add) add.onclick = function () {
-      var d = (document.getElementById('ptc-date') || {}).value || '';
-      var it = (document.getElementById('ptc-item') || {}).value || '';
-      var ds = (document.getElementById('ptc-desc') || {}).value || '';
-      var am = n((document.getElementById('ptc-amt') || {}).value);
-      if (!d) { toast('거래일자를 선택해 주세요', true); return; }
-      if (!am) { toast('금액을 입력해 주세요', true); return; }
-      var u = me();
-      DATA.items.push({ id: uid(), kind: listKind, date: d, item: it, desc: ds, amount: am, author: u.name, authorEmail: u.email, updatedAt: nowStr() });
-      push(function (ok) { toast(ok ? '저장 완료 (모든 사용자에게 반영)' : '이 PC에만 저장됨', !ok); });
-      renderInput();
+    var addch = document.getElementById('ptc-addch');
+    if (addch) addch.onclick = function () {
+      var el = document.getElementById('ptc-newch'); var v = ((el && el.value) || '').trim();
+      if (!v) { toast('항목명을 입력하세요', true); return; }
+      var arr = channels(inKind);
+      if (arr.indexOf(v) >= 0) { toast('이미 있는 항목입니다', true); return; }
+      arr.push(v); saveNow('항목 추가 완료'); renderInput();
     };
-
-    host.querySelectorAll('.ptc-del').forEach(function (b) {
+    host.querySelectorAll('.ptc-chdel').forEach(function (b) {
       b.onclick = function () {
-        var id = b.getAttribute('data-id');
-        var t = (DATA.items || []).filter(function (x) { return x.id === id; })[0];
-        if (!t) return;
-        if (!confirm('삭제할까요?\n\n' + (t.date || '') + ' · ' + (t.item || '') + '\n' + (t.desc || '') + ' · ' + f(t.amount) + '원')) return;
-        DATA.items = DATA.items.filter(function (x) { return x.id !== id; });
-        push(function (ok) { toast(ok ? '삭제 완료' : '이 PC에만 반영됨', !ok); });
-        renderInput();
+        var i = parseInt(b.getAttribute('data-i'), 10); var arr = channels(inKind); var nm = arr[i]; if (!nm) return;
+        if (!confirm('항목 "' + nm + '" 을(를) 삭제할까요?\n이 항목에 입력된 주간 금액도 함께 삭제됩니다.')) return;
+        arr.splice(i, 1);
+        DATA.items = (DATA.items || []).filter(function (it) { return !(it.src === 'weekly' && it.kind === inKind && it.item === nm); });
+        saveNow('항목 삭제 완료'); renderInput();
       };
     });
-
-    var seed = document.getElementById('ptc-seed');
-    if (seed) seed.onclick = function () {
-      if (!confirm('구글시트의 과거 비용 내역을 불러옵니다.\n이미 같은 건이 있으면 건너뜁니다. 진행할까요?')) return;
-      seed.disabled = true; seed.textContent = '가져오는 중…';
-      fetch(SEED_URL + '?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); })
-        .then(function (j) {
-          var have = {};
-          // 시트에 의도적으로 중복 기재된 건(작성자만 다름)도 살리기 위해 작성자까지 키에 포함
-          (DATA.items || []).forEach(function (x) { have[[x.kind, x.date, x.item, x.amount, x.desc, x.author].join('|')] = 1; });
-          var added = 0;
-          ['marketing', 'expense'].forEach(function (kd) {
-            (j[kd] || []).forEach(function (x) {
-              var key = [kd, x.date, x.item, x.amount, x.desc, x.author || '(구글시트)'].join('|');
-              if (have[key]) return;
-              have[key] = 1; added++;
-              DATA.items.push({ id: uid(), kind: kd, date: x.date, item: x.item, desc: x.desc, amount: n(x.amount), author: x.author || '(구글시트)', authorEmail: '', updatedAt: nowStr() });
-            });
-          });
-          push(function (ok) { toast('과거내역 ' + added + '건 추가' + (ok ? ' (공유저장)' : ' (이 PC에만)'), !ok); });
-          renderInput();
-        })
-        .catch(function () { toast('가져오기 실패 — cost-seed.json 배포 확인 필요', true); seed.disabled = false; seed.textContent = '구글시트 과거내역 가져오기'; });
-    };
   }
 
   // ── 부팅 ──
