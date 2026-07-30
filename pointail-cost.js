@@ -524,7 +524,7 @@
       '<th style="padding:8px 9px;text-align:right">합계</th></tr>';
     var body = months.map(function (mk) {
       var zero = grid[mk].__t === 0;
-      return '<tr style="border-top:1px solid var(--bd)' + (zero ? ';opacity:.4' : '') + '"><td style="padding:7px 9px;font-weight:600;white-space:nowrap">' + monthLbl(mk) + '</td>' +
+      return '<tr class="ptc-mrow"' + (zero ? '' : ' data-m="' + mk + '"') + ' style="border-top:1px solid var(--bd)' + (zero ? ';opacity:.4' : ';cursor:pointer') + '"><td style="padding:7px 9px;font-weight:600;white-space:nowrap">' + monthLbl(mk) + (zero ? '' : ' <span style="font-size:10px;color:var(--tx2)">▸</span>') + '</td>' +
         chs.map(function (ch) { return '<td style="padding:7px 9px;text-align:right">' + (grid[mk][ch] ? f(grid[mk][ch]) : '-') + '</td>'; }).join('') +
         '<td style="padding:7px 9px;text-align:right;font-weight:700">' + (grid[mk].__t ? f(grid[mk].__t) : '-') + '</td></tr>';
     }).join('');
@@ -542,6 +542,60 @@
   }
 
   function monthLbl(mk) { var p = String(mk).split('-'); return p[0].slice(2) + '년 ' + parseInt(p[1], 10) + '월'; }
+
+  // ── 월 세부내역 모달(배너) ──
+  function openMonthDetail(mk) {
+    var list = (DATA.items || []).filter(function (it) {
+      if (it.src !== 'weekly' || it.kind !== inKind) return false;
+      var w = weekByKey(it.week); return w && w.monthKey === mk;
+    });
+    list.sort(function (a, b) { return String(a.week).localeCompare(String(b.week)) || String(a.item).localeCompare(String(b.item)); });
+    var tot = 0; list.forEach(function (it) { tot += n(it.amount); });
+    var byCh = {}; list.forEach(function (it) { byCh[it.item] = (byCh[it.item] || 0) + n(it.amount); });
+    var chipH = Object.keys(byCh).sort(function (a, b) { return byCh[b] - byCh[a]; }).map(function (k) {
+      return '<span style="font-size:11px;padding:3px 9px;border-radius:20px;background:var(--bg2);border:1px solid var(--bd);white-space:nowrap">' + esc(k) + ' <b>' + f(byCh[k]) + '</b></span>';
+    }).join('');
+    var rowsH = list.map(function (it) {
+      var w = weekByKey(it.week);
+      return '<tr style="border-top:1px solid var(--bd)">' +
+        '<td style="padding:6px 10px;white-space:nowrap">' + (w ? w.weekNo + '주차' : '') + ' <span style="color:var(--tx2);font-size:11px">' + (w ? esc(w.label) : '') + '</span></td>' +
+        '<td style="padding:6px 10px">' + esc(it.item) + '</td>' +
+        '<td style="padding:6px 10px;text-align:right;font-weight:600">' + f(it.amount) + (it.cur === 'JPY' ? ' <span style="font-size:10px;color:var(--tx2)">(¥' + f(it.raw) + '×10)</span>' : '') + '</td>' +
+        '<td style="padding:6px 10px;font-size:11px;color:var(--tx2);white-space:nowrap">' + esc(it.author || '') + '</td>' +
+        '</tr>';
+    }).join('');
+    var html =
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">' +
+        '<div><div style="font-size:12px;color:var(--tx2)">' + KIND[inKind] + ' 세부내역</div>' +
+        '<div style="font-size:19px;font-weight:700">' + monthLbl(mk) + ' <span style="font-size:13px;color:var(--tx2)">합계 ' + f(tot) + '원 · ' + list.length + '건</span></div></div>' +
+        '<button data-ptc-close style="border:1px solid var(--bd2);background:var(--bg);border-radius:8px;padding:5px 12px;cursor:pointer;font-size:13px">닫기</button>' +
+      '</div>' +
+      (chipH ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 12px">' + chipH + '</div>' : '') +
+      '<div style="overflow:auto;max-height:56vh;border:1px solid var(--bd);border-radius:10px">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:12.5px">' +
+          '<thead><tr style="background:var(--bg2);font-size:11px;color:var(--tx2);position:sticky;top:0">' +
+            '<th style="padding:8px 10px;text-align:left">주차</th><th style="padding:8px 10px;text-align:left">채널</th>' +
+            '<th style="padding:8px 10px;text-align:right">금액</th><th style="padding:8px 10px;text-align:left">최종 수정자</th>' +
+          '</tr></thead><tbody>' + (rowsH || '<tr><td colspan="4" style="padding:20px;text-align:center;color:var(--tx2)">내역 없음</td></tr>') + '</tbody></table>' +
+      '</div>';
+    showCostModal(html);
+  }
+  function showCostModal(html) {
+    var ov = document.getElementById('ptc-modal-ov');
+    if (!ov) {
+      ov = document.createElement('div'); ov.id = 'ptc-modal-ov';
+      ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,20,35,.45);z-index:99998;display:flex;align-items:flex-start;justify-content:center;padding:60px 16px;overflow:auto';
+      var card = document.createElement('div'); card.id = 'ptc-modal';
+      card.style.cssText = 'background:var(--bg);border:1px solid var(--bd);border-radius:14px;box-shadow:0 12px 40px rgba(20,30,55,.25);max-width:760px;width:100%;padding:18px 20px';
+      ov.appendChild(card);
+      ov.addEventListener('click', function (e) { if (e.target === ov) closeCostModal(); });
+      document.body.appendChild(ov);
+    }
+    document.getElementById('ptc-modal').innerHTML = html;
+    ov.style.display = 'flex';
+    ov.querySelectorAll('[data-ptc-close]').forEach(function (b) { b.onclick = closeCostModal; });
+  }
+  function closeCostModal() { var ov = document.getElementById('ptc-modal-ov'); if (ov) ov.style.display = 'none'; }
 
   var pendingCur = {};   // 금액 입력 전 통화 선택 임시 보관 (key: week|ch)
   function saveNow(msg) { push(function (ok) { if (msg) toast(msg + (ok ? '' : ' (이 PC에만)'), !ok); }); }
@@ -573,6 +627,7 @@
     host.querySelectorAll('.ptc-view').forEach(function (b) { b.onclick = function () { inView = b.getAttribute('data-v'); renderInput(); }; });
     var ms = document.getElementById('ptc-month'); if (ms) ms.onchange = function () { inMonth = ms.value; selWeek = null; renderInput(); };
     var ys = document.getElementById('ptc-year2'); if (ys) ys.onchange = function () { inYear = ys.value; renderInput(); };
+    host.querySelectorAll('.ptc-mrow[data-m]').forEach(function (r) { r.onclick = function () { openMonthDetail(r.getAttribute('data-m')); }; });
     host.querySelectorAll('.ptc-wk').forEach(function (b) { b.onclick = function () { selWeek = b.getAttribute('data-wk'); renderInput(); }; });
     host.querySelectorAll('.ptc-amt').forEach(function (inp) { inp.onchange = function () { setAmount(inp.getAttribute('data-ch'), parseFloat(inp.value) || 0); }; });
     host.querySelectorAll('.ptc-cur').forEach(function (b) { b.onclick = function () { setCur(b.getAttribute('data-ch'), b.getAttribute('data-cur')); }; });
