@@ -58,16 +58,16 @@
   var selWeek = null;         // 주 key(월요일 ISO)
   var inYear = '';
 
-  // ── 주차 생성: 2026-06 ~ 2031-12, 월~일, 주 소속월은 목요일 기준(HTML 도구와 동일) ──
+  // ── 주차 생성: 2023-01 ~ 2031-12, 월~일, 주 소속월은 목요일 기준(HTML 도구와 동일) ──
   function pad2(n) { return ('0' + n).slice(-2); }
   function isoD(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
   function addD(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
   var WEEKS = (function () {
-    var w = [], monday = new Date(2026, 5, 1), cnt = {};
+    var w = [], monday = new Date(2022, 11, 26), cnt = {};   // 2022-12-26(월) → 첫 목요일이 2022-12-29, 2023-01 주는 그 다음부터
     while (true) {
       var thu = addD(monday, 3), mk = thu.getFullYear() + '-' + pad2(thu.getMonth() + 1);
       if (mk > '2031-12') break;
-      if (mk >= '2026-06') {
+      if (mk >= '2023-01') {
         cnt[mk] = (cnt[mk] || 0) + 1;
         var sun = addD(monday, 6);
         w.push({ key: isoD(monday), monthKey: mk, weekNo: cnt[mk], thu: isoD(thu),
