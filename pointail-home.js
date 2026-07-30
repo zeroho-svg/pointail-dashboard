@@ -96,6 +96,165 @@
   }
   function go(btnId) { var b = document.getElementById(btnId); if (b) b.click(); }
 
+  /* ── 📅 캠페인 캘린더 (오픈·오픈예정) ──────────────────────────
+   *  달력에 캠페인 "오픈일(모집 시작일)"을 찍어 브랜드·담당자·모집인원을 한눈에.
+   *  상태 3단계: 충족(선정≥목표) / 진행중 부족(모집중인데 목표 미달·노랑) /
+   *              미달(모집 마감됐는데 목표 미달·빨강). 오픈예정 = 오픈일이 미래.
+   *  날짜 클릭 → 그날 캠페인들을 카드로 상세 표시(전체 모집인원 포함).       */
+  var CAL = { y: null, m: null, sel: null };
+  var OPEN_RECRUIT = ['모집중', '추가 모집중'];              // 아직 모집중(마감 전)
+  var CAL_CANCEL = ['캠페인 취소', '등록 취소'];              // 달력에서 제외
+  var CAT_STYLE = {
+    '체험단':    { dot: '#1d9e75', bg: '#e3f4ed', tx: '#0f6e56', ic: '🧪' },
+    '인플루언서': { dot: '#7f77dd', bg: '#eeedfe', tx: '#3c3489', ic: '📣' }
+  };
+  var CAL_ST = {
+    behind: { tx: '#b45309', bg: '#fef3e2', bd: '#f6d79b', lab: '진행중 부족' },
+    short:  { tx: '#c0392b', bg: '#fceaea', bd: '#f0b6b6', lab: '미달' }
+  };
+  var AV = ['#3778c2', '#7f77dd', '#1d9e75', '#d85a30', '#c0398d', '#0f766e'];
+  function avColor(s) { var h = 0, i; for (i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return AV[h % AV.length]; }
+  function ini2(s) { return (String(s).replace(/[^가-힣A-Za-z0-9]/g, '').slice(0, 2)) || '?'; }
+  function d10(s) { return String(s || '').slice(0, 10); }
+  function catOf(c) { return c.campaignType === '인플루언서' ? '인플루언서' : '체험단'; }
+  function calOpenDate(c) { return d10(c.recruitStartAt) || d10(c.createdAt); }
+  function todayStr() { var t = new Date(); return t.getFullYear() + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + ('0' + t.getDate()).slice(-2); }
+  function calStateOf(c, soon) {
+    if (soon) return 'soon';
+    var tgt = n(c.recruitCount), sel = n(c.selectedCount);
+    if (tgt > 0 && sel >= tgt) return 'met';
+    if (OPEN_RECRUIT.indexOf(c.campaignStatus) >= 0) return 'behind';   // 모집중인데 목표 미달
+    if (tgt > 0 && sel < tgt) return 'short';                           // 마감됐는데 목표 미달
+    return 'met';                                                        // 목표 미설정 등 → 중립
+  }
+  function calMonthData() {
+    var mk = CAL.y + '-' + ('0' + (CAL.m + 1)).slice(-2), today = todayStr(), byDay = {};
+    camps().forEach(function (c) {
+      if (CAL_CANCEL.indexOf(c.campaignStatus) >= 0) return;
+      var od = calOpenDate(c); if (!od || od.slice(0, 7) !== mk) return;
+      var soon = od > today;
+      (byDay[od] = byDay[od] || []).push({
+        date: od,
+        brand: String(c.storeName || c.corpName || '').trim() || '(브랜드 미상)',
+        corp: String(c.corpName || '').trim(),
+        rep: String(c.salesManager || '미배정').trim() || '미배정',
+        cat: catOf(c), sub: String(c.campaignType || ''),
+        target: n(c.recruitCount), selected: n(c.selectedCount), applicant: n(c.applicantCount),
+        status: String(c.campaignStatus || ''), round: String(c.roundInfo || ''),
+        country: String(c.advertiserCountry || ''), soon: soon, state: calStateOf(c, soon),
+        title: String(c.campaignTitle || ''), no: c.campaignNoText || String(c.campaignNo || '')
+      });
+    });
+    return byDay;
+  }
+  function calChip(bg, tx, txt) { return '<span style="font-size:11.5px;padding:3px 9px;border-radius:20px;background:' + bg + ';color:' + tx + '">' + txt + '</span>'; }
+
+  function calCard(x) {
+    var cs = CAT_STYLE[x.cat], warn = (x.state === 'short' || x.state === 'behind') ? CAL_ST[x.state] : null;
+    var stTxt = x.soon ? '오픈예정' : x.status;
+    var stBg = x.soon ? '#e6f1fb' : (OPEN_RECRUIT.indexOf(x.status) >= 0 ? '#e3f4ed' : '#eef0f3');
+    var stFg = x.soon ? '#185fa5' : (OPEN_RECRUIT.indexOf(x.status) >= 0 ? '#0f6e56' : '#6b7280');
+    var numCol = warn ? warn.tx : '#1a1f29';
+    var amtHtml = x.soon
+      ? '<div style="font-size:18px;font-weight:700;color:#1a1f29">' + f(x.target) + '<span style="font-size:12px;font-weight:500;color:#8a94a6">명</span></div><div style="font-size:10px;color:#8a94a6">모집목표</div>'
+      : '<div style="font-size:18px;font-weight:700;color:' + numCol + '">' + f(x.selected) + '<span style="font-size:12px;color:#8a94a6;font-weight:500"> / ' + f(x.target) + '명</span></div><div style="font-size:10px;color:' + (warn ? warn.tx : '#8a94a6') + '">' + (warn ? warn.lab : '선정 / 목표') + '</div>';
+    var av = avColor(x.rep);
+    return '<div style="background:#fff;border:1px solid ' + (warn ? warn.bd : '#eef0f3') + ';border-radius:12px;padding:12px 13px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">' +
+        '<span style="font-size:14px;font-weight:700;color:#1a1f29;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.brand) + '</span>' +
+        '<span style="font-size:11px;padding:3px 8px;border-radius:20px;background:' + stBg + ';color:' + stFg + ';white-space:nowrap;flex:0 0 auto">' + esc(stTxt) + '</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">' +
+        '<span style="font-size:11px;padding:2px 8px;border-radius:6px;background:' + cs.bg + ';color:' + cs.tx + '">' + cs.ic + ' ' + x.cat + '</span>' +
+        (x.sub ? '<span style="font-size:11px;color:#8a94a6">' + esc(x.sub) + '</span>' : '') +
+        (x.country ? '<span style="font-size:11px;color:#8a94a6">· ' + esc(x.country) + '</span>' : '') +
+        (warn ? '<span style="font-size:11px;padding:2px 8px;border-radius:6px;background:' + warn.bg + ';color:' + warn.tx + ';margin-left:auto">' + warn.lab + ' ' + f(Math.max(0, x.target - x.selected)) + '명</span>' : '') +
+      '</div>' +
+      (x.corp ? '<div style="font-size:11px;color:#98a2b3;margin-bottom:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.corp) + '</div>' : '') +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:9px">' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+          '<span style="width:28px;height:28px;border-radius:50%;background:' + av + ';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">' + esc(ini2(x.rep)) + '</span>' +
+          '<div><div style="font-size:12.5px;font-weight:600;color:#1a1f29">' + esc(x.rep) + '</div><div style="font-size:10px;color:#8a94a6">영업담당자</div></div>' +
+        '</div>' +
+        '<div style="text-align:right">' + amtHtml + '</div>' +
+      '</div>' +
+      (x.title ? '<div style="font-size:12.5px;font-weight:600;color:#48505c;margin-bottom:8px;line-height:1.4">' + esc(x.title) + '</div>' : '') +
+      '<div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:#8a94a6">' +
+        '<span>📅 오픈 ' + esc(x.date) + '</span>' +
+        (x.round ? '<span>🔁 ' + esc(x.round) + ' 회차</span>' : '') +
+        '<span>🙋 신청 ' + f(x.applicant) + '명</span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function calendarHTML() {
+    if (CAL.y == null) { var tt = new Date(); CAL.y = tt.getFullYear(); CAL.m = tt.getMonth(); }
+    var mk = CAL.y + '-' + ('0' + (CAL.m + 1)).slice(-2), today = todayStr();
+    var byDay = calMonthData(), keys = Object.keys(byDay).sort();
+    if (!CAL.sel || d10(CAL.sel).slice(0, 7) !== mk || !byDay[CAL.sel]) CAL.sel = byDay[today] ? today : (keys[0] || null);
+
+    var openC = 0, soonC = 0, tgt = 0, behindC = 0, shortC = 0;
+    keys.forEach(function (k) { byDay[k].forEach(function (x) { if (x.soon) soonC++; else openC++; tgt += x.target; if (x.state === 'behind') behindC++; if (x.state === 'short') shortC++; }); });
+
+    var WD = ['일', '월', '화', '수', '목', '금', '토'];
+    var first = new Date(CAL.y, CAL.m, 1), start = first.getDay(), days = new Date(CAL.y, CAL.m + 1, 0).getDate();
+    var grid = '<div style="display:grid;grid-template-columns:repeat(7,1fr);background:#f7f8fa">';
+    WD.forEach(function (w, i) { grid += '<div style="text-align:center;padding:6px 0;font-size:11px;color:' + (i === 0 ? '#c0392b' : '#8a94a6') + '">' + w + '</div>'; });
+    grid += '</div><div style="display:grid;grid-template-columns:repeat(7,1fr)">';
+    var c2, dd;
+    for (c2 = 0; c2 < start; c2++) grid += '<div style="min-height:80px;border-top:1px solid #eef0f3"></div>';
+    for (dd = 1; dd <= days; dd++) {
+      var key = mk + '-' + ('0' + dd).slice(-2), arr = byDay[key] || [], sun = (dd + start - 1) % 7 === 0;
+      var isSel = key === CAL.sel, isToday = key === today;
+      grid += '<div onclick="' + (arr.length ? 'window.PTHOME&&PTHOME.calSel(\'' + key + '\')' : '') + '" style="min-height:80px;border-top:1px solid #eef0f3;border-left:1px solid #eef0f3;padding:4px 5px;' + (arr.length ? 'cursor:pointer;' : '') + (isSel ? 'background:#eef5ff;' : '') + '">' +
+        '<div style="font-size:11px;color:' + (sun ? '#c0392b' : '#8a94a6') + ';font-weight:' + (isSel || isToday ? '700' : '400') + '">' + dd + (isToday ? '<span style="font-size:9px;color:#185fa5;font-weight:700"> 오늘</span>' : '') + '</div>';
+      arr.slice(0, 2).forEach(function (x) {
+        var cs = CAT_STYLE[x.cat];
+        var amt = x.soon ? ('목표' + f(x.target)) : (f(x.selected) + '/' + f(x.target));
+        var col = x.state === 'short' ? '#c0392b' : (x.state === 'behind' ? '#b45309' : '#98a2b3');
+        var mkk = x.state === 'short' ? ' 미달' : (x.state === 'behind' ? ' 부족' : '');
+        grid += '<div style="display:flex;align-items:center;gap:3px;line-height:1.2;margin-top:2px">' +
+            '<span style="width:6px;height:6px;border-radius:2px;background:' + cs.dot + ';flex:0 0 auto"></span>' +
+            '<span style="font-size:10px;font-weight:600;color:#1a1f29;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.brand) + '</span></div>' +
+          '<div style="font-size:9.5px;margin:0 0 2px 9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:' + col + '">' + esc(x.rep) + '·' + amt + '명' + mkk + '</div>';
+      });
+      if (arr.length > 2) grid += '<div style="font-size:9.5px;color:#185fa5;margin-left:9px">+' + (arr.length - 2) + '건 더</div>';
+      grid += '</div>';
+    }
+    grid += '</div>';
+
+    var selArr = (CAL.sel && byDay[CAL.sel]) ? byDay[CAL.sel] : [];
+    var selTgt = 0, selSel = 0; selArr.forEach(function (x) { selTgt += x.target; if (!x.soon) selSel += x.selected; });
+    var sp = CAL.sel ? CAL.sel.split('-') : null;
+    var detHead = sp ? ('🗂 ' + parseInt(sp[1], 10) + '월 ' + parseInt(sp[2], 10) + '일 · ' + selArr.length + '건 · 모집목표 ' + f(selTgt) + '명 (선정 ' + f(selSel) + '명)') : '날짜를 선택하세요';
+    var detBody = selArr.length
+      ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:10px">' + selArr.map(calCard).join('') + '</div>'
+      : '<div style="color:#98a2b3;font-size:13px;padding:10px 0">이 달에 오픈/오픈예정 캠페인이 없습니다.</div>';
+
+    return '<div style="margin-top:16px;background:#fff;border:1px solid #eef0f3;border-radius:12px;padding:14px 16px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">' +
+        '<div style="font-size:14px;font-weight:700;color:#1a1f29">📅 캠페인 캘린더 <span style="font-size:12px;font-weight:400;color:#8a94a6">— 오픈·오픈예정 · 날짜 클릭 시 상세</span></div>' +
+        '<div style="display:flex;align-items:center;gap:6px">' +
+          '<button onclick="window.PTHOME&&PTHOME.calNav(-1)" style="width:28px;height:28px;border:1px solid #e5e8ee;background:#fff;border-radius:8px;cursor:pointer;color:#48505c">‹</button>' +
+          '<span style="font-size:13px;font-weight:700;min-width:96px;text-align:center;color:#1a1f29">' + CAL.y + '년 ' + (CAL.m + 1) + '월</span>' +
+          '<button onclick="window.PTHOME&&PTHOME.calNav(1)" style="width:28px;height:28px;border:1px solid #e5e8ee;background:#fff;border-radius:8px;cursor:pointer;color:#48505c">›</button>' +
+          '<button onclick="window.PTHOME&&PTHOME.calToday()" style="height:28px;padding:0 10px;border:1px solid #e5e8ee;background:#fff;border-radius:8px;cursor:pointer;font-size:12px;color:#48505c">오늘</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:11.5px">' +
+        calChip('#e3f4ed', '#0f6e56', '오픈 ' + openC) +
+        calChip('#e6f1fb', '#185fa5', '오픈예정 ' + soonC) +
+        calChip('#f4f5f7', '#6b7280', '목표 ' + f(tgt) + '명') +
+        (behindC ? calChip('#fef3e2', '#b45309', '부족 ' + behindC) : '') +
+        (shortC ? calChip('#fceaea', '#c0392b', '미달 ' + shortC) : '') +
+        '<span style="margin-left:auto;color:#98a2b3;font-size:10.5px"><span style="display:inline-block;width:8px;height:8px;border-radius:3px;background:#1d9e75;margin-right:3px"></span>체험단<span style="display:inline-block;width:8px;height:8px;border-radius:3px;background:#7f77dd;margin:0 3px 0 8px"></span>인플루언서</span>' +
+      '</div>' +
+      '<div style="border:1px solid #eef0f3;border-radius:10px;overflow:hidden">' + grid + '</div>' +
+      '<div style="font-size:13px;font-weight:700;color:#1a1f29;margin-top:12px">' + detHead + '</div>' +
+      detBody +
+    '</div>';
+  }
+
   function render() {
     var host = document.getElementById('tab-home'); if (!host) return;
     if (!camps().length && !members().length) {
@@ -167,6 +326,7 @@
             '<div style="font-size:12.5px;font-weight:600;color:#8a94a6;margin-bottom:6px">🔔 오늘의 액션 <span style="font-weight:400">— 광고주 관리로 이동</span></div>' + actions +
             '<div style="font-size:11px;color:#98a2b3;margin-top:8px">기준: 법인명별 마지막 캠페인 신청일 · ⚡ 동기화 시점 데이터</div></div>' +
         '</div>' +
+        calendarHTML() +
       '</div>';
   }
 
@@ -200,7 +360,13 @@
     window.showTab = function () { var b = document.getElementById('tab-btn-home'); if (b) b.classList.remove('active'); return _st.apply(this, arguments); };
     window.showTab.__ptHome = true;
   }
-  window.PTHOME = { show: show, render: render };
+  function calRerender() { var p = document.getElementById('tab-home'); if (p && p.classList.contains('active')) render(); }
+  window.PTHOME = {
+    show: show, render: render,
+    calSel: function (ds) { CAL.sel = ds; calRerender(); },
+    calNav: function (d) { if (CAL.y == null) { var t = new Date(); CAL.y = t.getFullYear(); CAL.m = t.getMonth(); } CAL.m += d; if (CAL.m < 0) { CAL.m = 11; CAL.y--; } else if (CAL.m > 11) { CAL.m = 0; CAL.y++; } CAL.sel = null; calRerender(); },
+    calToday: function () { var t = new Date(); CAL.y = t.getFullYear(); CAL.m = t.getMonth(); CAL.sel = null; calRerender(); }
+  };
 
   var t = null;
   function schedule() { clearTimeout(t); t = setTimeout(function () { try { ensure(); } catch (e) {} }, 200); }
