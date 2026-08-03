@@ -133,7 +133,41 @@ async function fetchAllAdvertisers(token, pageSize) {
   return { all, unauthorized };
 }
 
+// ── 공유 스냅샷 생성: 캠페인+회원 전량 수집 → KV 저장 ──
+//    크론(3시간)과 /snapshot/refresh(수동)에서 공용으로 사용.
+async function runSnapshot(env, ctx, trigger) {
+  if (!env.PT_KV) throw new Error("KV(PT_KV) 바인딩이 설정되지 않았습니다.");
+  let token = await getAutoToken(env, ctx, false);
+  let sm = await fetchSalesManagers(token);
+  let rc = await fetchAllCampaigns(token, "CREATE_DATE", 200);
+  if (rc.unauthorized) {
+    token = await getAutoToken(env, ctx, true);
+    sm = await fetchSalesManagers(token);
+    rc = await fetchAllCampaigns(token, "CREATE_DATE", 200);
+  }
+  if (rc.unauthorized) throw new Error("인증 실패(401): 캠페인");
+  let rm = await fetchAllAdvertisers(token, 200);
+  if (rm.unauthorized) {
+    token = await getAutoToken(env, ctx, true);
+    rm = await fetchAllAdvertisers(token, 200);
+  }
+  if (rm.unauthorized) throw new Error("인증 실패(401): 회원");
+  const campaigns = rc.all.map(mapCampaign);
+  const members = rm.all.map(function (a) { return mapMember(a, sm); });
+  const now = new Date().toISOString();
+  const meta = { updatedAt: now, trigger: trigger || "cron", campCount: campaigns.length, memberCount: members.length };
+  await env.PT_KV.put("pointail_snap_camp", JSON.stringify({ source: "storelink-apia-v2", fetchedAt: now, count: campaigns.length, campaigns: campaigns }));
+  await env.PT_KV.put("pointail_snap_member", JSON.stringify({ source: "storelink-advertiser", fetchedAt: now, count: members.length, members: members }));
+  await env.PT_KV.put("pointail_snap_meta", JSON.stringify(meta));
+  return meta;
+}
+
 export default {
+  // 크론 트리거(0 0/3 * * * UTC = KST 09·12·15·18·21·00·03·06시)에서 자동 실행
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil(runSnapshot(env, ctx, "cron").catch(function () {}));
+  },
+
   async fetch(request, env, ctx) {
     const cors = {
       "Access-Control-Allow-Origin": env.ALLOW_ORIGIN || "*",
@@ -232,6 +266,41 @@ export default {
         return json({ ok: true }, 200, cors);
       }
       return json({ error: "허용되지 않은 메서드" }, 405, cors);
+    }
+
+    // ── 공유 스냅샷 (KV) : 3시간 자동 동기화 결과를 모두가 공유 ──
+    //   GET /snapshot          → {meta, camp:{campaigns...}, member:{members...}}
+    //   GET /snapshot/meta     → 마지막 동기화 메타(updatedAt 등)만
+    //   GET /snapshot/refresh  → 강제 새로고침(5분 제한, ?force=1 시 무시)
+    if (url.pathname === "/snapshot" || url.pathname === "/snapshot/meta" || url.pathname === "/snapshot/refresh") {
+      if (!env.PT_KV) return json({ error: "KV(PT_KV) 바인딩이 설정되지 않았습니다." }, 500, cors);
+      if (url.pathname === "/snapshot/meta") {
+        const m = await env.PT_KV.get("pointail_snap_meta");
+        return new Response(m || "{}", { status: 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, cors) });
+      }
+      if (url.pathname === "/snapshot/refresh") {
+        const mRaw = await env.PT_KV.get("pointail_snap_meta");
+        let m = {}; try { m = JSON.parse(mRaw || "{}"); } catch (e) {}
+        const MIN_GAP = 5 * 60 * 1000;   // 남용 방지 최소 간격 5분
+        if (m.updatedAt && (Date.now() - Date.parse(m.updatedAt)) < MIN_GAP && url.searchParams.get("force") !== "1") {
+          return json({ ok: false, tooSoon: true, meta: m }, 200, cors);
+        }
+        try {
+          const meta = await runSnapshot(env, ctx, "manual");
+          return json({ ok: true, meta: meta }, 200, cors);
+        } catch (e) {
+          return json({ ok: false, error: String((e && e.message) || e) }, 500, cors);
+        }
+      }
+      // GET /snapshot — KV 원문을 그대로 이어붙여 반환(재직렬화 비용 없음)
+      const parts = await Promise.all([
+        env.PT_KV.get("pointail_snap_meta"),
+        env.PT_KV.get("pointail_snap_camp"),
+        env.PT_KV.get("pointail_snap_member"),
+      ]);
+      if (!parts[1]) return json({ empty: true }, 200, cors);
+      const bodyStr = '{"meta":' + (parts[0] || "{}") + ',"camp":' + parts[1] + ',"member":' + (parts[2] || "{}") + "}";
+      return new Response(bodyStr, { status: 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, cors) });
     }
 
     // ── 광고주 회원 목록 (어드민 /pug/jp/advertiser/search) ──
