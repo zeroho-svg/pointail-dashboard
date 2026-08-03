@@ -14,6 +14,9 @@
  *                중앙 스냅샷 자체를 갱신(5분 제한) → 모두가 즉시 최신본
  *                (엔드포인트 미배포 시 기존 syncFromApi로 폴백)
  *   4) 버튼 옆에 "공유 동기화 HH:MM" 배지 표시
+ *   5) [v2] 헤더 정리: 사용하지 않는 버튼(데이터 저장/불러오기·다운로드·
+ *      구글시트 동기화·업로드·⚙·+데이터 입력)과 "마지막 저장" 문구를 숨기고
+ *      ⚡ API 동기화 버튼 + 공유 동기화 배지만 남긴다.
  *
  *  ※ DB는 window 프로퍼티가 아니라 스크립트 전역(let/const)이므로 bare DB 사용.
  * ──────────────────────────────────────────────────────────── */
@@ -129,14 +132,33 @@
     }
   }
 
+  // [v2] 헤더 정리 — ⚡버튼·공유 배지만 남기고 미사용 버튼/문구 숨김
+  function tidyHeader() {
+    var saved = document.getElementById('last-saved-txt');           // "마지막 저장 · 본인 마지막 동기화"
+    if (saved && saved.style.display !== 'none') saved.style.display = 'none';
+    var row = document.getElementById('topbar-btns');
+    if (row) {
+      [].slice.call(row.children).forEach(function (el) {
+        if (el.id !== 'gs-btn-group' && el.style.display !== 'none') el.style.display = 'none';
+      });
+    }
+    var grp = document.getElementById('gs-btn-group');
+    if (grp) {
+      [].slice.call(grp.children).forEach(function (el) {
+        if (el.id !== 'api-sync-btn' && el.id !== 'pt-snap-badge' && el.style.display !== 'none') el.style.display = 'none';
+      });
+    }
+  }
+
   function start() {
     var tries = 0;
     var iv = setInterval(function () {
       tries++;
-      try { ensureButton(); } catch (e) {}
+      try { ensureButton(); tidyHeader(); } catch (e) {}
       if (document.getElementById('api-sync-btn') && document.getElementById('api-sync-btn').__ptAuto) clearInterval(iv);
       else if (tries > 60) clearInterval(iv);
     }, 500);
+    setInterval(function () { try { tidyHeader(); } catch (e) {} }, 3000);   // 재렌더 대비
     setTimeout(function () { checkAndSync(false); }, 2500);    // 접속 시 1회(규칙 동기화 이후)
     setInterval(function () { checkAndSync(true); }, POLL_MS); // 5분 폴링(크론 갱신 자동 반영)
   }
