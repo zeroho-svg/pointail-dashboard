@@ -13,6 +13,9 @@
  *             sd_val(r,'contractMktCost')    → (계약) 마케팅 서비스 매출
  *             sd_vatIncl(r,'execTotalAmount')→ (실행) 전체 매출
  *             sd_vatIncl(r,'execNetAmount')  → (실행) 마케팅 서비스 매출
+ *      [v6] (실시간) 전체·마케팅 서비스 = 계약 금액 × 진행(선정) 인원 비율
+ *             비율 = min(selectedCount / recruitCount, 1)  (모집 목표 0이면 0)
+ *             — (실행)은 미션 완료 인원 기준, (실시간)은 현재 선정 인원 기준의 예상치
  *
  *  ※ index.html 의 DB 는 const 전역이라 window.DB 로는 접근 불가 → bare DB 사용.
  *  원본 index.html 은 수정하지 않는다(주입형).
@@ -23,6 +26,7 @@
   var LSK = 'pt_sec_collapse';
   var MN = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
   var C_EXEC = '#3498db', C_MKT = '#27ae60';
+  var C_RT = '#8e44ad';                      // (실시간) 선정 인원 기준 색
   var C_KR = '#2563eb', C_JP = '#e11d48';   // 한국 / 일본 구분색
   var C_APP = '#0891b2';                     // 포인테일 앱 회원 색
   var WORKER = 'https://pointail-api.zeroho.workers.dev/';
@@ -192,8 +196,8 @@
 
     // 월별 집계 (분기별과 동일 지표)
     var M = [], i;
-    for (i = 0; i < 12; i++) M.push({ cnt: 0, kr: 0, jp: 0, cRev: 0, cMkt: 0, eRev: 0, eMkt: 0 });
-    var yt = { cnt: 0, kr: 0, jp: 0, cRev: 0, cMkt: 0, eRev: 0, eMkt: 0 };
+    for (i = 0; i < 12; i++) M.push({ cnt: 0, kr: 0, jp: 0, cRev: 0, cMkt: 0, eRev: 0, eMkt: 0, rRev: 0, rMkt: 0 });
+    var yt = { cnt: 0, kr: 0, jp: 0, cRev: 0, cMkt: 0, eRev: 0, eMkt: 0, rRev: 0, rMkt: 0 };
     rows.forEach(function (r) {
       var d = sdDate(r);
       if (!d || d.slice(0, 4) !== year) return;
@@ -201,11 +205,15 @@
       if (!(mi >= 0 && mi < 12)) return;
       var a = sdVal(r, 'contractFinal'), b = sdVal(r, 'contractMktCost'),
           c = sdVat(r, 'execTotalAmount'), e = sdVat(r, 'execNetAmount');
+      // (실시간) = 계약 금액 × 현재 선정(진행) 인원 비율
+      var rec = parseFloat(r.recruitCount) || 0, sel = parseFloat(r.selectedCount) || 0;
+      var ratio = rec > 0 ? Math.min(sel / rec, 1) : 0;
+      var ra = a * ratio, rb = b * ratio;
       var ctry = String(r.advertiserCountry == null ? '' : r.advertiserCountry).trim();
       var isJP = /일본|japan|jp/i.test(ctry);
       var m = M[mi];
-      m.cnt++; m.cRev += a; m.cMkt += b; m.eRev += c; m.eMkt += e;
-      yt.cnt++; yt.cRev += a; yt.cMkt += b; yt.eRev += c; yt.eMkt += e;
+      m.cnt++; m.cRev += a; m.cMkt += b; m.eRev += c; m.eMkt += e; m.rRev += ra; m.rMkt += rb;
+      yt.cnt++; yt.cRev += a; yt.cMkt += b; yt.eRev += c; yt.eMkt += e; yt.rRev += ra; yt.rMkt += rb;
       if (isJP) { m.jp++; yt.jp++; } else { m.kr++; yt.kr++; }
     });
 
@@ -232,6 +240,8 @@
           '<span>연간 (계약) 마케팅 서비스 매출<br><b style="font-size:12px;color:var(--tx)">' + f(yt.cMkt) + '</b>원</span>' +
           '<span>연간 (실행) 전체 매출<br><b style="font-size:12px;color:var(--tx)">' + f(yt.eRev) + '</b>원</span>' +
           '<span>연간 (실행) 마케팅 서비스 매출<br><b style="font-size:12px;color:var(--tx)">' + f(yt.eMkt) + '</b>원</span>' +
+          '<span style="color:' + C_RT + '">연간 (실시간) 전체 매출<br><b style="font-size:12px;color:' + C_RT + '">' + f(yt.rRev) + '</b>원</span>' +
+          '<span style="color:' + C_RT + '">연간 (실시간) 마케팅 서비스<br><b style="font-size:12px;color:' + C_RT + '">' + f(yt.rMkt) + '</b>원</span>' +
         '</div>' +
       '</div>';
 
@@ -284,6 +294,8 @@
           '<td style="padding:7px 10px;text-align:right;color:var(--tx2)">' + f(m2.cMkt) + '</td>' +
           '<td style="padding:7px 10px;text-align:right;font-weight:600;color:' + C_EXEC + '">' + f(m2.eRev) + '</td>' +
           '<td style="padding:7px 10px;text-align:right;color:' + C_MKT + '">' + f(m2.eMkt) + '</td>' +
+          '<td style="padding:7px 10px;text-align:right;font-weight:600;color:' + C_RT + ';border-left:1px solid var(--bd)">' + f(m2.rRev) + '</td>' +
+          '<td style="padding:7px 10px;text-align:right;color:' + C_RT + '">' + f(m2.rMkt) + '</td>' +
           '<td style="padding:7px 10px;text-align:right;color:var(--tx2)">' + pct(m2.eRev, yt.eRev) + '%</td>' +
         '</tr>';
     }
@@ -304,6 +316,8 @@
             '<th style="padding:8px 10px;text-align:right">(계약) 마케팅 서비스</th>' +
             '<th style="padding:8px 10px;text-align:right">(실행) 전체 매출</th>' +
             '<th style="padding:8px 10px;text-align:right">(실행) 마케팅 서비스</th>' +
+            '<th style="padding:8px 10px;text-align:right;border-left:1px solid var(--bd);color:' + C_RT + '">(실시간) 전체 매출<br><span style="font-weight:400">선정 인원 기준</span></th>' +
+            '<th style="padding:8px 10px;text-align:right;color:' + C_RT + '">(실시간) 마케팅 서비스</th>' +
             '<th style="padding:8px 10px;text-align:right">연간 기여도</th>' +
           '</tr></thead><tbody>' + trs +
           '<tr style="border-top:2px solid var(--bd);background:var(--bg2);font-weight:700">' +
@@ -320,6 +334,8 @@
             '<td style="padding:8px 10px;text-align:right">' + f(yt.cMkt) + '</td>' +
             '<td style="padding:8px 10px;text-align:right;color:' + C_EXEC + '">' + f(yt.eRev) + '</td>' +
             '<td style="padding:8px 10px;text-align:right;color:' + C_MKT + '">' + f(yt.eMkt) + '</td>' +
+            '<td style="padding:8px 10px;text-align:right;color:' + C_RT + ';border-left:1px solid var(--bd)">' + f(yt.rRev) + '</td>' +
+            '<td style="padding:8px 10px;text-align:right;color:' + C_RT + '">' + f(yt.rMkt) + '</td>' +
             '<td style="padding:8px 10px;text-align:right">100%</td>' +
           '</tr>' +
         '</tbody></table>' +
