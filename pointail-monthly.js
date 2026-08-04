@@ -13,9 +13,11 @@
  *             sd_val(r,'contractMktCost')    → (계약) 마케팅 서비스 매출
  *             sd_vatIncl(r,'execTotalAmount')→ (실행) 전체 매출
  *             sd_vatIncl(r,'execNetAmount')  → (실행) 마케팅 서비스 매출
- *      [v6] (실시간) 전체·마케팅 서비스 = 계약 금액 × 진행(선정) 인원 비율
- *             비율 = min(selectedCount / recruitCount, 1)  (모집 목표 0이면 0)
- *             — (실행)은 미션 완료 인원 기준, (실시간)은 현재 선정 인원 기준의 예상치
+ *      [v7] (실시간) 전체·마케팅 서비스 — 혼합 방식
+ *             · 진행 중 캠페인(모집중·추가 모집중·선정 완료·등록 대기·등록 완료·등록·일시 중지)
+ *               → 계약 금액 × min(선정/모집목표, 1) 비율 추정
+ *             · 그 외(캠페인 종료·취소 등) → (실행) 확정값 그대로 사용
+ *             ⇒ 과거 월은 (실행)과 일치, 진행 중인 월만 예상치가 반영됨
  *
  *  ※ index.html 의 DB 는 const 전역이라 window.DB 로는 접근 불가 → bare DB 사용.
  *  원본 index.html 은 수정하지 않는다(주입형).
@@ -26,7 +28,9 @@
   var LSK = 'pt_sec_collapse';
   var MN = ['1월', '2월', '3월', '4월', '5월', '6월', '7월', '8월', '9월', '10월', '11월', '12월'];
   var C_EXEC = '#3498db', C_MKT = '#27ae60';
-  var C_RT = '#8e44ad';                      // (실시간) 선정 인원 기준 색
+  var C_RT = '#8e44ad';                      // (실시간) 색
+  // (실시간) 비율 추정을 적용할 "진행 중" 상태 — 그 외는 (실행) 확정값 사용
+  var RT_ACTIVE = ['모집중', '추가 모집중', '선정 완료', '등록 대기', '등록 완료', '등록', '일시 중지'];
   var C_KR = '#2563eb', C_JP = '#e11d48';   // 한국 / 일본 구분색
   var C_APP = '#0891b2';                     // 포인테일 앱 회원 색
   var WORKER = 'https://pointail-api.zeroho.workers.dev/';
@@ -205,10 +209,15 @@
       if (!(mi >= 0 && mi < 12)) return;
       var a = sdVal(r, 'contractFinal'), b = sdVal(r, 'contractMktCost'),
           c = sdVat(r, 'execTotalAmount'), e = sdVat(r, 'execNetAmount');
-      // (실시간) = 계약 금액 × 현재 선정(진행) 인원 비율
-      var rec = parseFloat(r.recruitCount) || 0, sel = parseFloat(r.selectedCount) || 0;
-      var ratio = rec > 0 ? Math.min(sel / rec, 1) : 0;
-      var ra = a * ratio, rb = b * ratio;
+      // (실시간) 혼합: 진행 중 → 계약×선정비율 추정 / 종료·취소 → 실행 확정값
+      var ra, rb;
+      if (RT_ACTIVE.indexOf(String(r.campaignStatus || '')) >= 0) {
+        var rec = parseFloat(r.recruitCount) || 0, sel = parseFloat(r.selectedCount) || 0;
+        var ratio = rec > 0 ? Math.min(sel / rec, 1) : 0;
+        ra = a * ratio; rb = b * ratio;
+      } else {
+        ra = c; rb = e;
+      }
       var ctry = String(r.advertiserCountry == null ? '' : r.advertiserCountry).trim();
       var isJP = /일본|japan|jp/i.test(ctry);
       var m = M[mi];
@@ -316,7 +325,7 @@
             '<th style="padding:8px 10px;text-align:right">(계약) 마케팅 서비스</th>' +
             '<th style="padding:8px 10px;text-align:right">(실행) 전체 매출</th>' +
             '<th style="padding:8px 10px;text-align:right">(실행) 마케팅 서비스</th>' +
-            '<th style="padding:8px 10px;text-align:right;border-left:1px solid var(--bd);color:' + C_RT + '">(실시간) 전체 매출<br><span style="font-weight:400">선정 인원 기준</span></th>' +
+            '<th style="padding:8px 10px;text-align:right;border-left:1px solid var(--bd);color:' + C_RT + '">(실시간) 전체 매출<br><span style="font-weight:400">진행중 추정+종료 확정</span></th>' +
             '<th style="padding:8px 10px;text-align:right;color:' + C_RT + '">(실시간) 마케팅 서비스</th>' +
             '<th style="padding:8px 10px;text-align:right">연간 기여도</th>' +
           '</tr></thead><tbody>' + trs +
