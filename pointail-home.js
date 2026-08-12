@@ -9,10 +9,16 @@
  *  금액은 원본 sd_vatIncl/sd_date 기준(매출·손익 화면과 동일). 비용은 Worker /costs.
  *  탭 버튼(tab-btn-home)·패널(tab-home)을 만들고 pointail-nav.js(v2)가 그룹 배치.
  *  원본 index.html은 수정하지 않는다(주입형).
+ *  [v6 2026-08-12] 캘린더 날짜 클릭 카드에 ① 매출 정보(계약 contractFinal ·
+ *      실행 execTotalAmount, VAT 포함, sd_vatIncl 기준) ② 캠페인 번호 링크 추가 —
+ *      클릭 시 번호 클립보드 복사 + 관리자(admin.storelink.io/jp/campaigns-jp) 새 탭.
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
   var WORKER = 'https://pointail-api.zeroho.workers.dev/';
+  /* [v6] 캘린더 카드 캠페인 번호 클릭 → 관리자 페이지. 상세 딥링크 URL 패턴 확인 시
+   *      아래 상수를 교체(예: .../campaigns-jp/{no})하고 admGo의 복사 동작은 유지해도 무방. */
+  var ADMIN_CAMP_URL = 'https://admin.storelink.io/jp/campaigns-jp';
   var ACTIVE = ['모집중', '선정 완료', '등록 대기', '추가 모집중', '등록 완료', '일시 중지'];
   var COSTS = null;
 
@@ -145,7 +151,8 @@
         status: String(c.campaignStatus || ''), round: String(c.roundInfo || ''),
         country: String(c.advertiserCountry || ''), agency: String(c.companyType || '') === '대행사',
         soon: soon, state: calStateOf(c, soon),
-        title: String(c.campaignTitle || ''), no: c.campaignNoText || String(c.campaignNo || '')
+        title: String(c.campaignTitle || ''), no: c.campaignNoText || String(c.campaignNo || ''),
+        contract: sdVat(c, 'contractFinal'), amt: sdVat(c, 'execTotalAmount')
       });
     });
     // 각 날짜의 캠페인을 오픈 시작 시간이 빠른 순으로 정렬(셀·카드 공통)
@@ -191,6 +198,16 @@
         (x.round ? '<span>🔁 ' + esc(x.round) + ' 회차</span>' : '') +
         '<span>🙋 신청 ' + f(x.applicant) + '명</span>' +
       '</div>' +
+      ((x.contract || x.amt) ? '<div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:#8a94a6;margin-top:5px">' +
+        '<span>💰 계약 <b style="color:#48505c">₩' + comp(x.contract) + '</b> · 실행 <b style="color:#0f6e56">₩' + comp(x.amt) + '</b> <span style="font-size:10px">(VAT포함)</span></span>' +
+      '</div>' : '') +
+      (x.no ? '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #eef0f3">' +
+        '<a href="' + ADMIN_CAMP_URL + '" target="_blank" rel="noopener" ' +
+          'onclick="window.PTHOME&&PTHOME.admGo(\'' + esc(x.no) + '\')" ' +
+          'title="클릭 시 캠페인 번호가 복사되고 관리자 페이지가 새 탭으로 열립니다" ' +
+          'style="display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;color:#3778c2;text-decoration:none;background:#eef4fc;border:1px solid #d5e4f5;border-radius:8px;padding:3px 10px">' +
+          '🔗 캠페인 № ' + esc(x.no) + ' <span style="font-weight:500;color:#8a94a6">관리자 열기 ↗</span></a>' +
+      '</div>' : '') +
     '</div>';
   }
 
@@ -373,7 +390,14 @@
     show: show, render: render,
     calSel: function (ds) { CAL.sel = ds; calRerender(); },
     calNav: function (d) { if (CAL.y == null) { var t = new Date(); CAL.y = t.getFullYear(); CAL.m = t.getMonth(); } CAL.m += d; if (CAL.m < 0) { CAL.m = 11; CAL.y--; } else if (CAL.m > 11) { CAL.m = 0; CAL.y++; } CAL.sel = null; calRerender(); },
-    calToday: function () { var t = new Date(); CAL.y = t.getFullYear(); CAL.m = t.getMonth(); CAL.sel = null; calRerender(); }
+    calToday: function () { var t = new Date(); CAL.y = t.getFullYear(); CAL.m = t.getMonth(); CAL.sel = null; calRerender(); },
+    /* [v6] 캠페인 번호 클릭: 번호를 클립보드에 복사(관리자 검색창에 바로 붙여넣기 용).
+     *      새 탭 이동은 <a target="_blank"> 기본 동작. 이벤트 버블은 여기서 차단. */
+    admGo: function (no) {
+      try { if (window.event) window.event.stopPropagation(); } catch (e) { }
+      try { navigator.clipboard && navigator.clipboard.writeText(String(no)); } catch (e) { }
+      return true;
+    }
   };
 
   var t = null;
