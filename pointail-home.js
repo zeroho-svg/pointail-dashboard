@@ -12,8 +12,10 @@
  *  [v6 2026-08-12] 캘린더 날짜 클릭 카드에 ① 매출 정보(계약 contractFinal ·
  *      실행 execTotalAmount, VAT 포함, sd_vatIncl 기준) ② 캠페인 번호 링크 추가 —
  *      클릭 시 번호 클립보드 복사 + 관리자(admin.storelink.io/jp/campaigns-jp) 새 탭.
- *  [v7 2026-08-12] 카드 매출 라인에 계약 마케팅 서비스(contractMktCost) 추가 —
- *      💰 계약 · 마케 서비스 · 실행 3종 표시.
+ *  [v7 2026-08-12] 카드 매출 라인에 계약 마케팅 서비스(contractMktCost) 추가.
+ *  [v8 2026-08-13] 카드 매출 라인 정리 — 💰 전체매출(contractFinal) · 서비스매출
+ *      (contractMktCost) 2종만 표시. 라벨 변경(계약→전체매출, 마케 서비스→서비스매출),
+ *      실행매출(execTotalAmount)은 캘린더 카드에서 제외.
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
@@ -154,7 +156,7 @@
         country: String(c.advertiserCountry || ''), agency: String(c.companyType || '') === '대행사',
         soon: soon, state: calStateOf(c, soon),
         title: String(c.campaignTitle || ''), no: c.campaignNoText || String(c.campaignNo || ''),
-        contract: sdVat(c, 'contractFinal'), mkt: sdVat(c, 'contractMktCost'), amt: sdVat(c, 'execTotalAmount')
+        contract: sdVat(c, 'contractFinal'), mkt: sdVat(c, 'contractMktCost')
       });
     });
     // 각 날짜의 캠페인을 오픈 시작 시간이 빠른 순으로 정렬(셀·카드 공통)
@@ -200,8 +202,8 @@
         (x.round ? '<span>🔁 ' + esc(x.round) + ' 회차</span>' : '') +
         '<span>🙋 신청 ' + f(x.applicant) + '명</span>' +
       '</div>' +
-      ((x.contract || x.mkt || x.amt) ? '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;color:#8a94a6;margin-top:5px">' +
-        '<span>💰 계약 <b style="color:#48505c">₩' + comp(x.contract) + '</b> · 마케 서비스 <b style="color:#3778c2">₩' + comp(x.mkt) + '</b> · 실행 <b style="color:#0f6e56">₩' + comp(x.amt) + '</b> <span style="font-size:10px">(VAT포함)</span></span>' +
+      ((x.contract || x.mkt) ? '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;color:#8a94a6;margin-top:5px">' +
+        '<span>💰 전체매출 <b style="color:#48505c">₩' + comp(x.contract) + '</b> · 서비스매출 <b style="color:#3778c2">₩' + comp(x.mkt) + '</b> <span style="font-size:10px">(VAT포함)</span></span>' +
       '</div>' : '') +
       (x.no ? '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #eef0f3">' +
         '<a href="' + ADMIN_CAMP_URL + '" target="_blank" rel="noopener" ' +
