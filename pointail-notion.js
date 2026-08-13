@@ -1,5 +1,5 @@
 /* ────────────────────────────────────────────────────────────
- *  포인테일 대시보드 – 📝 노션 광고주 DB 연결 (pointail-notion.js) v2
+ *  포인테일 대시보드 – 📝 노션 광고주 DB 연결 (pointail-notion.js) v3
  *
  *  영업 › 🏢 광고주 관리 › 광고주 목록의 각 행(및 상세 모달 헤더)에서
  *  해당 업체의 노션 광고주 DB 페이지로 **바로 이동**한다.
@@ -39,6 +39,8 @@
 
   var MAP = null;          // { 법인명: 노션페이지ID }
   var LOADED = false;
+  var LAST_SUM = '';       // 요약 배지 마지막 HTML(불필요한 재삽입 방지)
+  var BUSY = false, PEND = null;
 
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (m) {
@@ -127,7 +129,12 @@
 
   /* ── 주입 ── */
   function decorate() {
-    if (!LOADED) return;
+    if (!LOADED || BUSY) return;
+    BUSY = true;
+    try { decorateInner(); } catch (e) { }
+    BUSY = false;
+  }
+  function decorateInner() {
     var rows = document.querySelectorAll('tr.ptad-adv-row:not([data-ptntn])');
     for (var i = 0; i < rows.length; i++) {
       var tr = rows[i];
@@ -143,13 +150,17 @@
       var comp = t ? String(t.textContent || '').split('#')[0].trim() : '';
       if (comp) meta.insertAdjacentHTML('beforeend', '<span>' + btnHTML(comp) + '</span>');
     }
-    /* 요약 배지 */
+    /* 요약 배지 — 내용이 바뀔 때만 갱신(무조건 재삽입하면 MutationObserver 무한루프) */
     var h3s = document.querySelectorAll('#tab-advmgr h3, .ptad-card h3');
     for (var k = 0; k < h3s.length; k++) {
       if (h3s[k].textContent.indexOf('광고주 목록') >= 0) {
+        var html = summaryHTML();
         var old = h3s[k].querySelector('.ptntn-sum');
-        if (old) old.parentNode.removeChild(old);
-        h3s[k].insertAdjacentHTML('beforeend', summaryHTML());
+        if (!old || html !== LAST_SUM) {
+          if (old && old.parentNode) old.parentNode.removeChild(old);
+          h3s[k].insertAdjacentHTML('beforeend', html);
+          LAST_SUM = html;
+        }
         break;
       }
     }
@@ -160,6 +171,7 @@
     for (var i = 0; i < d.length; i++) d[i].removeAttribute('data-ptntn');
     var b = document.querySelectorAll('.ptntn-b, .ptntn-e');
     for (var j = 0; j < b.length; j++) if (b[j].parentNode) b[j].parentNode.removeChild(b[j]);
+    LAST_SUM = '';
     decorate();
   }
   function wire() {
@@ -224,11 +236,14 @@
 
   function boot() {
     load();
+    /* 원본 재렌더(필터·정렬·더보기) 대비. 관찰 콜백은 디바운스해 재귀 호출을 막는다. */
     try {
-      new MutationObserver(function () { decorate(); })
-        .observe(document.body, { childList: true, subtree: true });
+      new MutationObserver(function () {
+        clearTimeout(PEND);
+        PEND = setTimeout(decorate, 250);
+      }).observe(document.body, { childList: true, subtree: true });
     } catch (e) { }
-    setInterval(decorate, 1500);   // 원본 재렌더(필터·정렬·더보기) 대비
+    setInterval(decorate, 2000);
   }
 
   window.PTNTN = {
