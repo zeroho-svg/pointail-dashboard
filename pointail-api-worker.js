@@ -452,6 +452,7 @@ function mapCampaign(c) {
     forceStopType:     c.forceCloseType || "",
     pauseType:         c.campaignStopType || "",
     recruitStartAt:    dt(c.recruitBeginDt),
+    recruitEndAt:      dt(c.recruitEndDt || c.recruitFinishDt || c.recruitCloseDt || c.recruitDeadlineDt || ""),
     createdAt:         dt(c.createDt),
     campaignNoText:    String(c.campaignNo),
   };
