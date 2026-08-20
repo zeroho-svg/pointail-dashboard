@@ -16,6 +16,12 @@
  *  [v8 2026-08-13] 카드 매출 라인 정리 — 💰 전체매출(contractFinal) · 서비스매출
  *      (contractMktCost) 2종만 표시. 라벨 변경(계약→전체매출, 마케 서비스→서비스매출),
  *      실행매출(execTotalAmount)은 캘린더 카드에서 제외.
+ *  [v9 2026-08-20] 「⏰ 모집 마감 미달 체크」 섹션 신설(캘린더 아래) — Worker가 새로
+ *      내려주는 recruitEndAt(모집 마감일) 기준, 마감 지난 캠페인 중 선정<목표를
+ *      실제 숫자로 판정(어드민 상태가 '선정완료'여도 잡아냄). 어제/최근3일/최근7일
+ *      탭, 부족 인원·달성률 바, 신청자 기준 힌트(추가 선정 가능/신청도 부족),
+ *      D+N 방치 경고, № 관리자 열기. 미달 0건이면 섹션 자동 숨김.
+ *      캘린더 미달 판정도 recruitEndAt 우선 사용(없으면 기존 상태 기반 유지).
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
@@ -133,6 +139,10 @@
     if (soon) return 'soon';
     var tgt = n(c.recruitCount), sel = n(c.selectedCount);
     if (tgt > 0 && sel >= tgt) return 'met';
+    /* [v9] 모집 마감일(recruitEndAt)이 있으면 상태 문자열보다 우선 판정 —
+     *      어드민 상태가 자동으로 '선정완료'로 바뀌어도 실미달을 잡는다. */
+    var ed = d10(c.recruitEndAt);
+    if (ed && tgt > 0) return ed >= todayStr() ? 'behind' : 'short';
     if (OPEN_RECRUIT.indexOf(c.campaignStatus) >= 0) return 'behind';   // 모집중인데 목표 미달
     if (tgt > 0 && sel < tgt) return 'short';                           // 마감됐는데 목표 미달
     return 'met';                                                        // 목표 미설정 등 → 중립
@@ -284,6 +294,116 @@
     '</div>';
   }
 
+  /* ── ⏰ 모집 마감 미달 체크 [v9] ─────────────────────────────
+   *  recruitEndAt(모집 마감일)이 지난 캠페인 중 선정 < 목표를 "실제 숫자"로 판정.
+   *  어드민 상태가 '선정완료'로 자동 변경돼도 잡아낸다. 3시간 자동 동기화 데이터 기준.
+   *  탭: 어제 마감(1) / 최근 3일(3) / 최근 7일(7). 7일 내 미달 0건이면 섹션 숨김. */
+  var CHK = { win: 1 };
+  function dstr(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function chkScan(winDays) {
+    var today = todayStr();
+    var from = dstr(new Date(new Date().getTime() - winDays * 86400000));
+    var closed = 0, met = 0, list = [];
+    camps().forEach(function (c) {
+      if (CAL_CANCEL.indexOf(c.campaignStatus) >= 0) return;
+      var ed = d10(c.recruitEndAt);
+      if (!ed || ed >= today || ed < from) return;          // 마감이 어제~N일 전인 것만
+      var tgt = n(c.recruitCount); if (!(tgt > 0)) return;  // 목표 미설정은 판정 불가 → 제외
+      closed++;
+      var sel = n(c.selectedCount);
+      if (sel >= tgt) { met++; return; }
+      var app = n(c.applicantCount);
+      var dplus = Math.max(1, Math.round((new Date(today) - new Date(ed)) / 86400000));
+      list.push({
+        brand: String(c.storeName || c.corpName || '').trim() || '(브랜드 미상)',
+        corp: String(c.corpName || '').trim(), agency: String(c.companyType || '') === '대행사',
+        rep: String(c.salesManager || '미배정').trim() || '미배정',
+        cat: catOf(c), country: String(c.advertiserCountry || ''),
+        status: String(c.campaignStatus || ''), title: String(c.campaignTitle || ''),
+        no: c.campaignNoText || String(c.campaignNo || ''),
+        tgt: tgt, sel: sel, app: app, lack: tgt - sel, pct: Math.round(sel / tgt * 100),
+        end: ed, dplus: dplus, canAdd: app >= tgt, extra: Math.max(0, Math.min(app, tgt) - sel)
+      });
+    });
+    list.sort(function (a, b) { return (b.dplus - a.dplus) || (a.pct - b.pct); });
+    return { closed: closed, met: met, list: list, lackSum: list.reduce(function (s, x) { return s + x.lack; }, 0) };
+  }
+  function chkCard(x) {
+    var sev = x.canAdd ? { bd: '#f5d9a8', tx: '#b45309' } : { bd: '#f3cfcf', tx: '#c0392b' };
+    var cs = CAT_STYLE[x.cat];
+    var md = x.end.slice(5).replace(/^0/, '').replace('-0', '/').replace('-', '/');
+    var hint = x.canAdd
+      ? '<span style="color:#0f6e56;font-weight:700">(추가 선정 가능 +' + f(x.extra) + ')</span>'
+      : '<span style="color:#c0392b;font-weight:700">(신청도 부족)</span>';
+    var tip = x.canAdd
+      ? '<span style="font-size:11px;font-weight:700;color:#0f6e56;background:#e3f4ed;border:1px solid #bfe3d4;border-radius:8px;padding:3px 10px">💡 신청자 중 추가 선정</span>'
+      : '<span style="font-size:11px;font-weight:700;color:#b45309;background:#fef3e2;border:1px solid #f5d9a8;border-radius:8px;padding:3px 10px">💡 추가 모집 검토</span>';
+    var av = avColor(x.rep);
+    return '<div style="background:#fff;border:1px solid ' + sev.bd + ';border-radius:12px;padding:12px 13px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">' +
+        '<span style="font-size:14px;font-weight:700;color:#1a1f29;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.brand) + '</span>' +
+        '<span style="display:flex;gap:4px;flex:0 0 auto">' +
+          '<span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:#eef0f3;color:#6b7280" title="어드민 상태">' + esc(x.status) + '</span>' +
+          '<span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:' + sev.tx + ';color:#fff;font-weight:800">⚠ 실미달</span>' +
+        '</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">' +
+        '<span style="font-size:11px;padding:2px 8px;border-radius:6px;background:' + cs.bg + ';color:' + cs.tx + '">' + cs.ic + ' ' + x.cat + '</span>' +
+        '<span style="font-size:11px;color:#8a94a6">' + (x.country ? '· ' + esc(x.country) + ' ' : '') + (x.corp ? '· ' + esc(x.corp) : '') + (x.agency ? ' <span style="color:#b45309;font-weight:600">(대행사)</span>' : '') + '</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px">' +
+        '<div style="display:flex;align-items:center;gap:8px">' +
+          '<span style="width:28px;height:28px;border-radius:50%;background:' + av + ';color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:700">' + esc(ini2(x.rep)) + '</span>' +
+          '<div><div style="font-size:12.5px;font-weight:600;color:#1a1f29">' + esc(x.rep) + '</div><div style="font-size:10px;color:#8a94a6">영업담당자</div></div>' +
+        '</div>' +
+        '<div style="text-align:right">' +
+          '<div style="font-size:19px;font-weight:800;color:' + sev.tx + '">' + f(x.sel) + '<span style="font-size:12px;color:#8a94a6;font-weight:500"> / ' + f(x.tgt) + '명</span></div>' +
+          '<div style="font-size:10px;color:' + sev.tx + ';font-weight:700">부족 ' + f(x.lack) + '명 · 달성 ' + x.pct + '%</div>' +
+        '</div>' +
+      '</div>' +
+      '<div style="height:7px;border-radius:5px;background:#eceff3;position:relative;margin-bottom:8px">' +
+        '<div style="position:absolute;left:0;top:0;height:7px;width:' + Math.min(100, x.pct) + '%;border-radius:5px;background:' + sev.tx + '"></div>' +
+      '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11.5px;color:#8a94a6">' +
+        '<span>⏱ 마감 ' + esc(md) + ' <b style="color:' + sev.tx + '">D+' + x.dplus + (x.dplus >= 3 ? ' ⚠ 방치' : '') + '</b></span>' +
+        '<span>🙋 신청 ' + f(x.app) + '명 ' + hint + '</span>' +
+      '</div>' +
+      '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #eef0f3;display:flex;gap:5px;flex-wrap:wrap">' +
+        (x.no ? '<a href="' + ADMIN_CAMP_URL + '" target="_blank" rel="noopener" onclick="window.PTHOME&&PTHOME.admGo(\'' + esc(x.no) + '\')" ' +
+          'title="클릭 시 캠페인 번호가 복사되고 관리자 페이지가 새 탭으로 열립니다" ' +
+          'style="font-size:11px;font-weight:700;color:#3778c2;background:#eef4fc;border:1px solid #d5e4f5;border-radius:8px;padding:3px 10px;text-decoration:none">🔗 № ' + esc(x.no) + ' 관리자 열기 ↗</a>' : '') +
+        tip +
+      '</div>' +
+    '</div>';
+  }
+  function checkupHTML() {
+    var wide = chkScan(7);
+    if (!wide.list.length) return '';                       // 7일 내 실미달 0건 → 자동 숨김
+    var r = CHK.win === 7 ? wide : chkScan(CHK.win);
+    function tabBtn(w, lab) {
+      var on = CHK.win === w;
+      return '<button onclick="window.PTHOME&&PTHOME.chkWin(' + w + ')" style="font-size:11.5px;font-weight:700;padding:4px 12px;border-radius:8px;cursor:pointer;' +
+        (on ? 'background:#111827;color:#fff;border:1.5px solid #111827' : 'background:#fff;border:1.5px solid #e5e8ee;color:#667085') + '">' + lab + '</button>';
+    }
+    var labWin = CHK.win === 1 ? '어제' : '최근 ' + CHK.win + '일';
+    var body = r.list.length
+      ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px">' + r.list.map(chkCard).join('') + '</div>'
+      : '<div style="color:#0f6e56;font-size:13px;padding:8px 0">✅ ' + labWin + ' 마감 캠페인은 모두 목표를 채웠습니다.</div>';
+    return '<div style="margin-top:16px;background:#fff;border:1px solid #eef0f3;border-radius:12px;padding:14px 16px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">' +
+        '<div style="font-size:14px;font-weight:700;color:#1a1f29">⏰ 모집 마감 미달 체크 <span style="font-size:12px;font-weight:400;color:#8a94a6">— 마감일 지난 캠페인 중 <b style="color:#c0392b">선정 &lt; 목표</b> · 상태가 \'선정완료\'여도 실제 숫자로 판정</span></div>' +
+        '<div style="display:flex;align-items:center;gap:6px">' + tabBtn(1, '어제 마감') + tabBtn(3, '최근 3일') + tabBtn(7, '최근 7일') + '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:12px">' +
+        '<span style="font-size:11.5px;padding:3px 10px;border-radius:20px;background:#eef0f3;color:#48505c">' + labWin + ' 마감 <b>' + r.closed + '건</b></span>' +
+        (r.list.length ? '<span style="font-size:11.5px;padding:3px 10px;border-radius:20px;background:#fdecec;color:#c0392b;font-weight:700">⚠ 실미달 ' + r.list.length + '건</span>' : '') +
+        (r.lackSum ? '<span style="font-size:11.5px;padding:3px 10px;border-radius:20px;background:#fef3e2;color:#b45309;font-weight:700">부족 합계 ' + f(r.lackSum) + '명</span>' : '') +
+        (r.met ? '<span style="font-size:11.5px;padding:3px 10px;border-radius:20px;background:#e3f4ed;color:#0f6e56">충족 ' + r.met + '건 (자동 숨김)</span>' : '') +
+        '<span style="margin-left:auto;font-size:10.5px;color:#98a2b3">기준: 3시간마다 자동 동기화 · 목표 미설정 캠페인 제외</span>' +
+      '</div>' + body +
+    '</div>';
+  }
+
   function render() {
     var host = document.getElementById('tab-home'); if (!host) return;
     if (!camps().length && !members().length) {
@@ -356,6 +476,7 @@
             '<div style="font-size:11px;color:#98a2b3;margin-top:8px">기준: 법인명별 마지막 캠페인 신청일 · ⚡ 동기화 시점 데이터</div></div>' +
         '</div>' +
         calendarHTML() +
+        checkupHTML() +
       '</div>';
   }
 
@@ -395,6 +516,8 @@
     calSel: function (ds) { CAL.sel = ds; calRerender(); },
     calNav: function (d) { if (CAL.y == null) { var t = new Date(); CAL.y = t.getFullYear(); CAL.m = t.getMonth(); } CAL.m += d; if (CAL.m < 0) { CAL.m = 11; CAL.y--; } else if (CAL.m > 11) { CAL.m = 0; CAL.y++; } CAL.sel = null; calRerender(); },
     calToday: function () { var t = new Date(); CAL.y = t.getFullYear(); CAL.m = t.getMonth(); CAL.sel = null; calRerender(); },
+    /* [v9] 미달 체크 탭 전환(1=어제, 3=최근3일, 7=최근7일) */
+    chkWin: function (w) { CHK.win = w; calRerender(); },
     /* [v6] 캠페인 번호 클릭: 번호를 클립보드에 복사(관리자 검색창에 바로 붙여넣기 용).
      *      새 탭 이동은 <a target="_blank"> 기본 동작. 이벤트 버블은 여기서 차단. */
     admGo: function (no) {
