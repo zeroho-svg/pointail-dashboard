@@ -21,6 +21,7 @@
  *      실제 숫자로 판정(어드민 상태가 '선정완료'여도 잡아냄). 어제/최근3일/최근7일
  *      탭, 부족 인원·달성률 바, 신청자 기준 힌트(추가 선정 가능/신청도 부족),
  *      D+N 방치 경고, № 관리자 열기. 미달 0건이면 섹션 자동 숨김.
+ *      (v10 패치) 목표 999명(상시모집 표기) 캠페인은 미달 판정에서 제외.
  *      캘린더 미달 판정도 recruitEndAt 우선 사용(없으면 기존 상태 기반 유지).
  * ──────────────────────────────────────────────────────────── */
 (function () {
@@ -308,7 +309,8 @@
       if (CAL_CANCEL.indexOf(c.campaignStatus) >= 0) return;
       var ed = d10(c.recruitEndAt);
       if (!ed || ed >= today || ed < from) return;          // 마감이 어제~N일 전인 것만
-      var tgt = n(c.recruitCount); if (!(tgt > 0)) return;  // 목표 미설정은 판정 불가 → 제외
+      var tgt = n(c.recruitCount);
+      if (!(tgt > 0) || tgt >= 999) return;                 // 목표 미설정·999명(상시모집 표기)은 판정 불가 → 제외
       closed++;
       var sel = n(c.selectedCount);
       if (sel >= tgt) { met++; return; }
@@ -399,7 +401,7 @@
         (r.list.length ? '<span style="font-size:11.5px;padding:3px 10px;border-radius:20px;background:#fdecec;color:#c0392b;font-weight:700">⚠ 실미달 ' + r.list.length + '건</span>' : '') +
         (r.lackSum ? '<span style="font-size:11.5px;padding:3px 10px;border-radius:20px;background:#fef3e2;color:#b45309;font-weight:700">부족 합계 ' + f(r.lackSum) + '명</span>' : '') +
         (r.met ? '<span style="font-size:11.5px;padding:3px 10px;border-radius:20px;background:#e3f4ed;color:#0f6e56">충족 ' + r.met + '건 (자동 숨김)</span>' : '') +
-        '<span style="margin-left:auto;font-size:10.5px;color:#98a2b3">기준: 3시간마다 자동 동기화 · 목표 미설정 캠페인 제외</span>' +
+        '<span style="margin-left:auto;font-size:10.5px;color:#98a2b3">기준: 3시간마다 자동 동기화 · 목표 미설정·999명(상시) 캠페인 제외</span>' +
       '</div>' + body +
     '</div>';
   }
