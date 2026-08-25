@@ -268,6 +268,45 @@ export default {
       return json({ error: "허용되지 않은 메서드" }, 405, cors);
     }
 
+    // ── 캠페인 미션 구성 조회 (홈 캘린더 카드용) ──
+    //   GET /missions?no=103005 또는 no=103005,103008,… (최대 30건)
+    //   → { ok, missions: { "103005": ["PURCHASE","TEXT_REVIEW",…], … } }
+    //   캠페인별 6시간 캐시(미션 구성은 오픈 후 거의 불변). 인증은 자동 로그인 토큰 재사용.
+    if (url.pathname === "/missions") {
+      const nos = String(url.searchParams.get("no") || "")
+        .split(",").map(function (s) { return s.trim(); })
+        .filter(function (s) { return /^\d{1,10}$/.test(s); }).slice(0, 30);
+      if (!nos.length) return json({ error: "no 파라미터가 필요합니다(쉼표 구분, 최대 30건)." }, 400, cors);
+      const MSN_TTL = 21600; // 6시간
+      const cacheM2 = caches.default;
+      const out = {};
+      let tokenM2 = null;
+      try {
+        for (const no of nos) {
+          const ck = new Request("https://pointail-msn-cache/" + no);
+          const hit = await cacheM2.match(ck);
+          if (hit) { try { out[no] = await hit.json(); continue; } catch (e) {} }
+          if (tokenM2 === null) tokenM2 = await getAutoToken(env, ctx, false);
+          let res = await fetch(API_BASE + "/pug/jp/campaigns/" + no + "/missions", { headers: upstreamHeaders({ "X-Auth-Token": tokenM2 }) });
+          if (res.status === 401) {
+            tokenM2 = await getAutoToken(env, ctx, true);
+            res = await fetch(API_BASE + "/pug/jp/campaigns/" + no + "/missions", { headers: upstreamHeaders({ "X-Auth-Token": tokenM2 }) });
+          }
+          if (!res.ok) { out[no] = null; continue; }   // 404 등 → 해당 건만 null
+          const jm = await res.json().catch(function () { return null; });
+          const items = ((jm && jm.result && jm.result.campaignMissions) || [])
+            .map(function (x) { return x && x.msnItem; }).filter(Boolean);
+          out[no] = items;
+          ctx.waitUntil(cacheM2.put(ck, new Response(JSON.stringify(items), {
+            headers: { "Content-Type": "application/json", "Cache-Control": "max-age=" + MSN_TTL }
+          })));
+        }
+        return json({ ok: true, missions: out }, 200, cors);
+      } catch (e) {
+        return json({ ok: false, error: String((e && e.message) || e), missions: out }, 500, cors);
+      }
+    }
+
     // ── 공유 스냅샷 (KV) : 3시간 자동 동기화 결과를 모두가 공유 ──
     //   GET /snapshot          → {meta, camp:{campaigns...}, member:{members...}}
     //   GET /snapshot/meta     → 마지막 동기화 메타(updatedAt 등)만

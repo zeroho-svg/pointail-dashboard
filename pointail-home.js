@@ -23,6 +23,11 @@
  *      D+N 방치 경고, № 관리자 열기. 미달 0건이면 섹션 자동 숨김.
  *      (v10 패치) 목표 999명(상시모집 표기) 캠페인은 미달 판정에서 제외.
  *      캘린더 미달 판정도 recruitEndAt 우선 사용(없으면 기존 상태 기반 유지).
+ *  [v11 2026-08-26] 캘린더 날짜 클릭 카드에 「🎯 미션 구성」 박스 추가 — Worker
+ *      신규 /missions?no=1,2,… (어드민 /pug/jp/campaigns/{no}/missions 프록시,
+ *      6h 캐시) 를 카드가 열릴 때만 조회(선택 날짜의 캠페인만, 클라이언트 캐시).
+ *      🛒 구매(기본)=회색, 추가 미션은 종류별 색: 리뷰(보라)·@cosme/LIPS(청록)·
+ *      인스타(핑크)·찜(주황)·기타(회색). 조회 전 "미션 확인 중…" 표시.
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
@@ -178,6 +183,68 @@
   }
   function calChip(bg, tx, txt) { return '<span style="font-size:11.5px;padding:3px 9px;border-radius:20px;background:' + bg + ';color:' + tx + '">' + txt + '</span>'; }
 
+  /* ── 🎯 캠페인 미션 구성 [v11] ────────────────────────────────
+   *  카드가 열릴 때만 Worker /missions 로 조회(선택 날짜 캠페인만) + 캐시.
+   *  MSN[no] === undefined → 미조회(확인 중…), [] → 정보 없음, [items] → 칩. */
+  var MSN = {}, MSN_PEND = {};
+  var MSN_LABEL = {
+    PURCHASE:            ['🛒 구매',               '#eef0f3', '#48505c', 0],
+    TEXT_REVIEW:         ['✍️ 텍스트 리뷰',        '#eeedfe', '#4f46b8', 1],
+    PHOTO_REVIEW:        ['📸 포토 리뷰',          '#eeedfe', '#4f46b8', 1],
+    COSME_TEXT_REVIEW:   ['💄 @cosme 텍스트 리뷰', '#e8f3f9', '#0e7490', 1],
+    COSME_PHOTO_REVIEW:  ['💄 @cosme 포토 리뷰',   '#e8f3f9', '#0e7490', 1],
+    LIPS_TEXT_REVIEW:    ['💋 LIPS 텍스트 리뷰',   '#e8f3f9', '#0e7490', 1],
+    LIPS_PHOTO_REVIEW:   ['💋 LIPS 포토 리뷰',     '#e8f3f9', '#0e7490', 1],
+    INSTAGRAM_POST:      ['📱 인스타 게시물',      '#fdeef7', '#c0398d', 1],
+    INSTAGRAM_REELS:     ['🎬 인스타 릴스',        '#fdeef7', '#c0398d', 1],
+    SAVE_PRODUCT:        ['🔖 상품 찜',            '#fef3e2', '#b45309', 1],
+    CONTRACT:            ['📝 계약',               '#eef0f3', '#48505c', 1],
+    CERTIFIED_DELIVERED: ['📦 배송 인증',          '#eef0f3', '#48505c', 1]
+  };
+  function msnChip(item) {
+    var d = MSN_LABEL[item] || [String(item), '#eef0f3', '#6b7280', 1];
+    return '<span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:' + d[1] + ';color:' + d[2] + (d[3] ? ';font-weight:600' : '') + ';white-space:nowrap">' + esc(d[0]) + '</span>';
+  }
+  function msnBoxHTML(no) {
+    var items = MSN[no], inner, head = '';
+    if (items === undefined) inner = '<span style="font-size:10.5px;color:#98a2b3">미션 확인 중…</span>';
+    else if (!items || !items.length) inner = '<span style="font-size:10.5px;color:#98a2b3">미션 정보 없음</span>';
+    else {
+      inner = items.map(msnChip).join(' ');
+      var extra = items.filter(function (i) { return i !== 'PURCHASE'; }).length;
+      head = '(기본 + 추가 ' + extra + ')';
+    }
+    return '<div class="ptmsn" data-no="' + esc(no) + '" style="margin-bottom:8px;padding:7px 9px;background:#f8f9fb;border:1px solid #eef0f3;border-radius:9px">' +
+      '<div style="font-size:10px;font-weight:700;color:#8a94a6;margin-bottom:4px">🎯 미션 구성 <span style="font-weight:400">' + head + '</span></div>' +
+      '<div style="display:flex;gap:4px;flex-wrap:wrap">' + inner + '</div></div>';
+  }
+  function loadMissions(nos) {
+    var need = [], seen = {};
+    (nos || []).forEach(function (n) {
+      n = String(n || '').trim();
+      if (n && !seen[n] && MSN[n] === undefined && !MSN_PEND[n]) { seen[n] = 1; need.push(n); }
+    });
+    if (!need.length) return;
+    need.forEach(function (n) { MSN_PEND[n] = 1; });
+    fetch(WORKER + 'missions?no=' + need.join(','), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        need.forEach(function (n) { delete MSN_PEND[n]; });
+        if (!j || !j.missions) return;
+        Object.keys(j.missions).forEach(function (n) { MSN[n] = j.missions[n] || []; });
+        // 열려 있는 카드의 박스만 부분 갱신(전체 재렌더 없이)
+        document.querySelectorAll('.ptmsn').forEach(function (el) {
+          var no = el.getAttribute('data-no');
+          if (MSN[no] !== undefined) {
+            var t = document.createElement('div');
+            t.innerHTML = msnBoxHTML(no);
+            el.parentNode.replaceChild(t.firstChild, el);
+          }
+        });
+      })
+      .catch(function () { need.forEach(function (n) { delete MSN_PEND[n]; }); });
+  }
+
   function calCard(x) {
     var cs = CAT_STYLE[x.cat], warn = (x.state === 'short' || x.state === 'behind') ? CAL_ST[x.state] : null;
     var stTxt = x.soon ? '오픈예정' : x.status;
@@ -208,6 +275,7 @@
         '<div style="text-align:right">' + amtHtml + '</div>' +
       '</div>' +
       (x.title ? '<div style="font-size:12.5px;font-weight:600;color:#48505c;margin-bottom:8px;line-height:1.4">' + esc(x.title) + '</div>' : '') +
+      (x.no ? msnBoxHTML(x.no) : '') +                                  /* [v11] 🎯 미션 구성 */
       '<div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:#8a94a6">' +
         '<span>📅 오픈 ' + esc(x.date) + (x.openTime ? ' <b style="color:#48505c">' + esc(x.openTime) + '</b>' : '') + '</span>' +
         (x.round ? '<span>🔁 ' + esc(x.round) + ' 회차</span>' : '') +
@@ -264,6 +332,8 @@
     grid += '</div>';
 
     var selArr = (CAL.sel && byDay[CAL.sel]) ? byDay[CAL.sel] : [];
+    /* [v11] 선택 날짜 캠페인의 미션 구성 조회(렌더 후 실행, 캐시된 건은 요청 안 함) */
+    if (selArr.length) setTimeout(function () { loadMissions(selArr.map(function (x) { return x.no; })); }, 0);
     var selTgt = 0, selSel = 0; selArr.forEach(function (x) { selTgt += x.target; if (!x.soon) selSel += x.selected; });
     var sp = CAL.sel ? CAL.sel.split('-') : null;
     var detHead = sp ? ('🗂 ' + parseInt(sp[1], 10) + '월 ' + parseInt(sp[2], 10) + '일 · ' + selArr.length + '건 · 모집목표 ' + f(selTgt) + '명 (선정 ' + f(selSel) + '명)') : '날짜를 선택하세요';
