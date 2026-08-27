@@ -202,6 +202,7 @@
     LIPS_PHOTO_REVIEW:   ['💋 LIPS 포토 리뷰',     '#e8f3f9', '#0e7490', 1],
     INSTAGRAM_POST:      ['📱 인스타 게시물',      '#fdeef7', '#c0398d', 1],
     INSTAGRAM_REELS:     ['🎬 인스타 릴스',        '#fdeef7', '#c0398d', 1],
+    X_POSTING:           ['𝕏 X(트위터) 포스팅',    '#fdeef7', '#c0398d', 1],
     SAVE_PRODUCT:        ['🔖 상품 찜',            '#fef3e2', '#b45309', 1],
     CONTRACT:            ['📝 계약',               '#eef0f3', '#48505c', 1],
     CERTIFIED_DELIVERED: ['📦 배송 인증',          '#eef0f3', '#48505c', 1]
