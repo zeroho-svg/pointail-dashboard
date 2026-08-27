@@ -268,36 +268,51 @@ export default {
       return json({ error: "허용되지 않은 메서드" }, 405, cors);
     }
 
-    // ── 캠페인 미션 구성 조회 (홈 캘린더 카드용) ──
-    //   GET /missions?no=103005 또는 no=103005,103008,… (최대 30건)
-    //   → { ok, missions: { "103005": ["PURCHASE","TEXT_REVIEW",…], … } }
-    //   캠페인별 6시간 캐시(미션 구성은 오픈 후 거의 불변). 인증은 자동 로그인 토큰 재사용.
+    // ── 캠페인 미션 구성 + 일정(사전모집·모집기간) 조회 (홈 캘린더 카드용) ──
+    //   GET /missions?no=103005 또는 no=103005,103008,… (최대 20건 — 건당 상위 API 2회 호출)
+    //   → { ok, missions: { "103005": { m:["PURCHASE",…], pre, begin, end }, … } }
+    //     m=미션 enum 목록 / pre=사전 노출 시작(preDisplayDt) / begin~end=실제 모집 기간
+    //   캠페인별 6시간 캐시(v2 키 — v1 배열 캐시와 분리). 인증은 자동 로그인 토큰 재사용.
     if (url.pathname === "/missions") {
       const nos = String(url.searchParams.get("no") || "")
         .split(",").map(function (s) { return s.trim(); })
-        .filter(function (s) { return /^\d{1,10}$/.test(s); }).slice(0, 30);
-      if (!nos.length) return json({ error: "no 파라미터가 필요합니다(쉼표 구분, 최대 30건)." }, 400, cors);
+        .filter(function (s) { return /^\d{1,10}$/.test(s); }).slice(0, 20);
+      if (!nos.length) return json({ error: "no 파라미터가 필요합니다(쉼표 구분, 최대 20건)." }, 400, cors);
       const MSN_TTL = 21600; // 6시간
       const cacheM2 = caches.default;
       const out = {};
       let tokenM2 = null;
+      const authed = async function (path) {
+        if (tokenM2 === null) tokenM2 = await getAutoToken(env, ctx, false);
+        let res = await fetch(API_BASE + path, { headers: upstreamHeaders({ "X-Auth-Token": tokenM2 }) });
+        if (res.status === 401) {
+          tokenM2 = await getAutoToken(env, ctx, true);
+          res = await fetch(API_BASE + path, { headers: upstreamHeaders({ "X-Auth-Token": tokenM2 }) });
+        }
+        return res;
+      };
       try {
         for (const no of nos) {
-          const ck = new Request("https://pointail-msn-cache/" + no);
+          const ck = new Request("https://pointail-msn-cache/v2/" + no);
           const hit = await cacheM2.match(ck);
           if (hit) { try { out[no] = await hit.json(); continue; } catch (e) {} }
-          if (tokenM2 === null) tokenM2 = await getAutoToken(env, ctx, false);
-          let res = await fetch(API_BASE + "/pug/jp/campaigns/" + no + "/missions", { headers: upstreamHeaders({ "X-Auth-Token": tokenM2 }) });
-          if (res.status === 401) {
-            tokenM2 = await getAutoToken(env, ctx, true);
-            res = await fetch(API_BASE + "/pug/jp/campaigns/" + no + "/missions", { headers: upstreamHeaders({ "X-Auth-Token": tokenM2 }) });
-          }
-          if (!res.ok) { out[no] = null; continue; }   // 404 등 → 해당 건만 null
-          const jm = await res.json().catch(function () { return null; });
-          const items = ((jm && jm.result && jm.result.campaignMissions) || [])
-            .map(function (x) { return x && x.msnItem; }).filter(Boolean);
-          out[no] = items;
-          ctx.waitUntil(cacheM2.put(ck, new Response(JSON.stringify(items), {
+          const [resM, resD] = [
+            await authed("/pug/jp/campaigns/" + no + "/missions"),
+            await authed("/pug/jp/campaigns/" + no + "/detail"),
+          ];
+          if (!resM.ok && !resD.ok) { out[no] = null; continue; }   // 404 등 → 해당 건만 null
+          const jm = resM.ok ? await resM.json().catch(function () { return null; }) : null;
+          const jd = resD.ok ? await resD.json().catch(function () { return null; }) : null;
+          const d = (jd && jd.result) || {};
+          const entry = {
+            m: ((jm && jm.result && jm.result.campaignMissions) || [])
+              .map(function (x) { return x && x.msnItem; }).filter(Boolean),
+            pre:   dt(d.preDisplayDt || ""),
+            begin: dt(d.recruitBeginDt || ""),
+            end:   dt(d.recruitEndDt || ""),
+          };
+          out[no] = entry;
+          ctx.waitUntil(cacheM2.put(ck, new Response(JSON.stringify(entry), {
             headers: { "Content-Type": "application/json", "Cache-Control": "max-age=" + MSN_TTL }
           })));
         }

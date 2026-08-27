@@ -28,6 +28,11 @@
  *      6h 캐시) 를 카드가 열릴 때만 조회(선택 날짜의 캠페인만, 클라이언트 캐시).
  *      🛒 구매(기본)=회색, 추가 미션은 종류별 색: 리뷰(보라)·@cosme/LIPS(청록)·
  *      인스타(핑크)·찜(주황)·기타(회색). 조회 전 "미션 확인 중…" 표시.
+ *  [v12 2026-08-27] 카드 날짜 라인 2단 구분 — 📣 사전모집(preDisplayDt~모집시작,
+ *      노출 일수) / 🚀 캠페인 진행(recruitBeginDt~recruitEndDt 모집 마감까지,
+ *      모집 일수·당일 마감 표기). Worker /missions 가 상세(detail)도 함께 조회해
+ *      {m,pre,begin,end} 반환(캐시 v2 키). 조회 전에는 기존 📅 오픈 한 줄 유지,
+ *      로드되면 자동 교체. 요청은 15건씩 분할(Worker 서브요청 한도 보호).
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
@@ -205,9 +210,14 @@
     var d = MSN_LABEL[item] || [String(item), '#eef0f3', '#6b7280', 1];
     return '<span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:' + d[1] + ';color:' + d[2] + (d[3] ? ';font-weight:600' : '') + ';white-space:nowrap">' + esc(d[0]) + '</span>';
   }
+  function msnEntry(no) {
+    var v = MSN[no];
+    if (v === undefined || v === null) return v;
+    return Array.isArray(v) ? { m: v } : v;      // 구(v11) 배열 응답 호환
+  }
   function msnBoxHTML(no) {
-    var items = MSN[no], inner, head = '';
-    if (items === undefined) inner = '<span style="font-size:10.5px;color:#98a2b3">미션 확인 중…</span>';
+    var e = msnEntry(no), items = e && e.m, inner, head = '';
+    if (e === undefined) inner = '<span style="font-size:10.5px;color:#98a2b3">미션 확인 중…</span>';
     else if (!items || !items.length) inner = '<span style="font-size:10.5px;color:#98a2b3">미션 정보 없음</span>';
     else {
       inner = items.map(msnChip).join(' ');
@@ -218,6 +228,40 @@
       '<div style="font-size:10px;font-weight:700;color:#8a94a6;margin-bottom:4px">🎯 미션 구성 <span style="font-weight:400">' + head + '</span></div>' +
       '<div style="display:flex;gap:4px;flex-wrap:wrap">' + inner + '</div></div>';
   }
+  /* [v12] 날짜 2단 박스: 📣 사전모집(pre~begin) / 🚀 캠페인 진행(begin~end, 모집 마감까지) */
+  function dMD(s) { s = String(s || ''); return s.length >= 10 ? (parseInt(s.slice(5, 7), 10) + '/' + parseInt(s.slice(8, 10), 10)) : ''; }
+  function dHM(s) { s = String(s || ''); return s.length >= 16 ? s.slice(11, 16) : ''; }
+  function dDays(a, b) {
+    var x = Date.parse(String(a).slice(0, 10)), y = Date.parse(String(b).slice(0, 10));
+    return (isFinite(x) && isFinite(y)) ? Math.round((y - x) / 86400000) : null;
+  }
+  function dateLine(badgeBg, badgeTx, badge, body) {
+    return '<div style="display:flex;align-items:center;gap:7px;font-size:11.5px;margin-top:3px">' +
+      '<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;background:' + badgeBg + ';color:' + badgeTx + ';white-space:nowrap;flex:0 0 auto">' + badge + '</span>' +
+      '<span style="color:#48505c">' + body + '</span></div>';
+  }
+  function datesBoxHTML(no, fbDate, fbTime) {
+    var e = msnEntry(no);
+    var open = '<div class="ptdates" data-no="' + esc(no) + '" style="font-size:11.5px;color:#8a94a6;margin-bottom:6px">📅 오픈 ' + esc(fbDate || '') + (fbTime ? ' <b style="color:#48505c">' + esc(fbTime) + '</b>' : '') + '</div>';
+    if (!e || !e.begin) return open;             // 조회 전/일정 없음 → 기존 오픈 한 줄 유지
+    var rows = '';
+    if (e.pre) {
+      var pd = dDays(e.pre, e.begin);
+      var pTail = pd === 0 ? '당일 노출' : (pd != null && pd > 0 ? pd + '일간 노출' : '');
+      rows += dateLine('#fef3e2', '#b45309', '📣 사전모집',
+        dMD(e.pre) + ' <b>' + dHM(e.pre) + '</b> ~ ' + dMD(e.begin) + ' ' + dHM(e.begin) +
+        (pTail ? ' <span style="color:#98a2b3;font-size:10.5px">(' + pTail + ')</span>' : ''));
+    }
+    var body = dMD(e.begin) + ' <b>' + dHM(e.begin) + '</b>' +
+      (e.end ? ' ~ ' + dMD(e.end) + ' <b>' + dHM(e.end) + '</b>' : '');
+    if (e.end) {
+      var rd = dDays(e.begin, e.end);
+      var rTail = rd === 0 ? '당일 마감' : (rd != null && rd > 0 ? '모집 ' + (rd + 1) + '일' : '');
+      if (rTail) body += ' <span style="color:#98a2b3;font-size:10.5px">(' + rTail + ')</span>';
+    }
+    rows += dateLine('#e3f4ed', '#0f6e56', '🚀 캠페인 진행', body);
+    return '<div class="ptdates" data-no="' + esc(no) + '" style="margin-bottom:8px;padding:6px 9px 8px;background:#fbfaf6;border:1px solid #efe9d8;border-radius:9px">' + rows + '</div>';
+  }
   function loadMissions(nos) {
     var need = [], seen = {};
     (nos || []).forEach(function (n) {
@@ -226,23 +270,37 @@
     });
     if (!need.length) return;
     need.forEach(function (n) { MSN_PEND[n] = 1; });
-    fetch(WORKER + 'missions?no=' + need.join(','), { cache: 'no-store' })
-      .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (j) {
-        need.forEach(function (n) { delete MSN_PEND[n]; });
-        if (!j || !j.missions) return;
-        Object.keys(j.missions).forEach(function (n) { MSN[n] = j.missions[n] || []; });
-        // 열려 있는 카드의 박스만 부분 갱신(전체 재렌더 없이)
-        document.querySelectorAll('.ptmsn').forEach(function (el) {
-          var no = el.getAttribute('data-no');
-          if (MSN[no] !== undefined) {
-            var t = document.createElement('div');
-            t.innerHTML = msnBoxHTML(no);
-            el.parentNode.replaceChild(t.firstChild, el);
-          }
-        });
-      })
-      .catch(function () { need.forEach(function (n) { delete MSN_PEND[n]; }); });
+    // Worker 서브요청 한도 보호: 15건씩 분할 요청
+    var chunks = [];
+    for (var ci = 0; ci < need.length; ci += 15) chunks.push(need.slice(ci, ci + 15));
+    chunks.forEach(function (chunk) {
+      fetch(WORKER + 'missions?no=' + chunk.join(','), { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (j) {
+          chunk.forEach(function (n) { delete MSN_PEND[n]; });
+          if (!j || !j.missions) return;
+          Object.keys(j.missions).forEach(function (n) { MSN[n] = j.missions[n]; });
+          // 열려 있는 카드의 미션·날짜 박스만 부분 갱신(전체 재렌더 없이)
+          document.querySelectorAll('.ptmsn').forEach(function (el) {
+            var no = el.getAttribute('data-no');
+            if (MSN[no] !== undefined) {
+              var t = document.createElement('div');
+              t.innerHTML = msnBoxHTML(no);
+              el.parentNode.replaceChild(t.firstChild, el);
+            }
+          });
+          document.querySelectorAll('.ptdates').forEach(function (el) {
+            var no = el.getAttribute('data-no');
+            var e = msnEntry(no);
+            if (e && e.begin) {
+              var t = document.createElement('div');
+              t.innerHTML = datesBoxHTML(no, '', '');
+              el.parentNode.replaceChild(t.firstChild, el);
+            }
+          });
+        })
+        .catch(function () { chunk.forEach(function (n) { delete MSN_PEND[n]; }); });
+    });
   }
 
   function calCard(x) {
@@ -276,8 +334,9 @@
       '</div>' +
       (x.title ? '<div style="font-size:12.5px;font-weight:600;color:#48505c;margin-bottom:8px;line-height:1.4">' + esc(x.title) + '</div>' : '') +
       (x.no ? msnBoxHTML(x.no) : '') +                                  /* [v11] 🎯 미션 구성 */
+      (x.no ? datesBoxHTML(x.no, x.date, x.openTime)                    /* [v12] 📣 사전모집 / 🚀 캠페인 진행 */
+            : '<div style="font-size:11.5px;color:#8a94a6;margin-bottom:6px">📅 오픈 ' + esc(x.date) + (x.openTime ? ' <b style="color:#48505c">' + esc(x.openTime) + '</b>' : '') + '</div>') +
       '<div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:#8a94a6">' +
-        '<span>📅 오픈 ' + esc(x.date) + (x.openTime ? ' <b style="color:#48505c">' + esc(x.openTime) + '</b>' : '') + '</span>' +
         (x.round ? '<span>🔁 ' + esc(x.round) + ' 회차</span>' : '') +
         '<span>🙋 신청 ' + f(x.applicant) + '명</span>' +
       '</div>' +
