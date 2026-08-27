@@ -507,6 +507,9 @@ function mapCampaign(c) {
     pauseType:         c.campaignStopType || "",
     recruitStartAt:    dt(c.recruitBeginDt),                       // 어드민 「모집 시작 일시」 = 사전모집 시작
     realStartAt:       dt((c.currentSelRndSchedule && c.currentSelRndSchedule.selRndBeginDt) || ""),   // 「선정 시작 일시」 = 실제 모집 시작
+    roundTarget:       (c.currentSelRndSchedule && c.currentSelRndSchedule.selRndNum) || 0,            // 현재 회차 모집 인원
+    roundSelected:     (c.currentSelRndSchedule && c.currentSelRndSchedule.realSelRndNum) || 0,        // 현재 회차 실선정 인원
+    roundState:        (c.currentSelRndSchedule && c.currentSelRndSchedule.selRndState) || "",         // 현재 회차 상태
     recruitEndAt:      dt((c.currentSelRndSchedule && c.currentSelRndSchedule.selRndEndDt) || c.recruitEndDt || ""),   // 실제 모집 마감
     createdAt:         dt(c.createDt),
     campaignNoText:    String(c.campaignNo),

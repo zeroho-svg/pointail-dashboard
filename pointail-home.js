@@ -40,6 +40,11 @@
  *      ② 카드 날짜 박스: 두 일시가 다르면 📣 사전모집 / 🚀 실제 모집 2단,
  *         같으면 🚀 실제 모집 한 줄 + (바로 모집) 표기 — 스냅샷 값으로 즉시
  *         렌더(비동기 조회 불필요, v12의 detail 기반 로직 대체).
+ *  [v15 2026-08-27] 회차 분할 모집(하루 XX명씩) 대응 — 어드민 상태가 '모집중'
+ *      이어도 **그날(현재) 회차 인원이 채워지면**(roundSelected≥roundTarget 또는
+ *      회차 상태가 종료류) 카드 배지를 「선정완료」로 표시 + 옆에 회차 선정
+ *      N/M명 병기. Worker가 currentSelRndSchedule의 selRndNum·realSelRndNum·
+ *      selRndState 를 roundTarget/roundSelected/roundState 로 매핑.
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
@@ -186,7 +191,8 @@
         soon: soon, state: calStateOf(c, soon),
         title: String(c.campaignTitle || ''), no: c.campaignNoText || String(c.campaignNo || ''),
         contract: sdVat(c, 'contractFinal'), mkt: sdVat(c, 'contractMktCost'),
-        pre: String(c.recruitStartAt || ''), realS: String(c.realStartAt || ''), realE: String(c.recruitEndAt || '')   /* [v14] */
+        pre: String(c.recruitStartAt || ''), realS: String(c.realStartAt || ''), realE: String(c.recruitEndAt || ''),  /* [v14] */
+        rTgt: n(c.roundTarget), rSel: n(c.roundSelected), rSt: String(c.roundState || '')                              /* [v15] 현재 회차 */
       });
     });
     // 각 날짜의 캠페인을 오픈 시작 시간이 빠른 순으로 정렬(셀·카드 공통)
@@ -314,6 +320,14 @@
     var stTxt = x.soon ? '오픈예정' : x.status;
     var stBg = x.soon ? '#e6f1fb' : (OPEN_RECRUIT.indexOf(x.status) >= 0 ? '#e3f4ed' : '#eef0f3');
     var stFg = x.soon ? '#185fa5' : (OPEN_RECRUIT.indexOf(x.status) >= 0 ? '#0f6e56' : '#6b7280');
+    /* [v15] 회차 분할 모집: 상태가 '모집중'류여도 현재 회차 인원이 채워졌으면 「선정완료」 배지 */
+    var rDone = !x.soon && OPEN_RECRUIT.indexOf(x.status) >= 0 && x.rTgt > 0 &&
+                (x.rSel >= x.rTgt || /COMPLETE|FINISH|END|CLOSE|DONE/i.test(x.rSt));
+    var stTip = '';
+    if (rDone) {
+      stTxt = '선정완료'; stBg = '#eef0f3'; stFg = '#6b7280';
+      stTip = ' title="이번 회차 인원 충족(' + f(x.rSel) + '/' + f(x.rTgt) + '명) — 캠페인 전체는 진행 중(어드민 상태: ' + esc(x.status) + ')"';
+    }
     var numCol = warn ? warn.tx : '#1a1f29';
     var amtHtml = x.soon
       ? '<div style="font-size:18px;font-weight:700;color:#1a1f29">' + f(x.target) + '<span style="font-size:12px;font-weight:500;color:#8a94a6">명</span></div><div style="font-size:10px;color:#8a94a6">모집목표</div>'
@@ -322,7 +336,7 @@
     return '<div style="background:#fff;border:1px solid ' + (warn ? warn.bd : '#eef0f3') + ';border-radius:12px;padding:12px 13px">' +
       '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">' +
         '<span style="font-size:14px;font-weight:700;color:#1a1f29;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.brand) + '</span>' +
-        '<span style="font-size:11px;padding:3px 8px;border-radius:20px;background:' + stBg + ';color:' + stFg + ';white-space:nowrap;flex:0 0 auto">' + esc(stTxt) + '</span>' +
+        '<span' + stTip + ' style="font-size:11px;padding:3px 8px;border-radius:20px;background:' + stBg + ';color:' + stFg + ';white-space:nowrap;flex:0 0 auto">' + esc(stTxt) + '</span>' +
       '</div>' +
       '<div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap">' +
         '<span style="font-size:11px;padding:2px 8px;border-radius:6px;background:' + cs.bg + ';color:' + cs.tx + '">' + cs.ic + ' ' + x.cat + '</span>' +
@@ -343,6 +357,8 @@
       datesBoxHTML(x) +                                                 /* [v14] 📣 사전모집 / 🚀 실제 모집 */
       '<div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:#8a94a6">' +
         (x.round ? '<span>🔁 ' + esc(x.round) + ' 회차</span>' : '') +
+        /* [v15] 회차 분할 모집이면 이번 회차 선정 현황 병기(채워지면 초록) */
+        (x.rTgt > 0 && /\/(?!1$)\d+$/.test(String(x.round || '')) ? '<span>👥 이번 회차 <b style="color:' + (x.rSel >= x.rTgt ? '#0f6e56' : '#48505c') + '">' + f(x.rSel) + '/' + f(x.rTgt) + '명</b></span>' : '') +
         '<span>🙋 신청 ' + f(x.applicant) + '명</span>' +
       '</div>' +
       ((x.contract || x.mkt) ? '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11.5px;color:#8a94a6;margin-top:5px">' +
