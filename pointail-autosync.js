@@ -133,6 +133,8 @@
   }
 
   // [v2] 헤더 정리 — ⚡버튼·공유 배지만 남기고 미사용 버튼/문구 숨김
+  // [v3 2026-08-27] 화이트리스트에 pt-theme-toggle(🌓 화면 색상 전환 버튼) 추가 —
+  //     darkmode 모듈이 넣는 버튼을 tidyHeader가 숨기던 문제 수정
   function tidyHeader() {
     var saved = document.getElementById('last-saved-txt');           // "마지막 저장 · 본인 마지막 동기화"
     if (saved && saved.style.display !== 'none') saved.style.display = 'none';
@@ -145,7 +147,7 @@
     var grp = document.getElementById('gs-btn-group');
     if (grp) {
       [].slice.call(grp.children).forEach(function (el) {
-        if (el.id !== 'api-sync-btn' && el.id !== 'pt-snap-badge' && el.style.display !== 'none') el.style.display = 'none';
+        if (el.id !== 'api-sync-btn' && el.id !== 'pt-snap-badge' && el.id !== 'pt-theme-toggle' && el.style.display !== 'none') el.style.display = 'none';
       });
     }
   }

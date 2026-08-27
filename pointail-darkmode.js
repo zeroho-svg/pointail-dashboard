@@ -50,7 +50,12 @@
   }
 
   function ensure() {
-    if (document.getElementById('pt-theme-toggle')) return;
+    var ex = document.getElementById('pt-theme-toggle');
+    if (ex) {
+      /* [v2] 구버전 tidyHeader가 숨겨놨을 수 있음 → 항상 다시 표시 */
+      if (ex.style.display === 'none') ex.style.display = '';
+      return;
+    }
     /* ⚡ API 동기화 버튼 옆(같은 헤더 컨테이너)에 배치. 없으면 다음 재시도. */
     var sync = null, btns = document.querySelectorAll('button'), i;
     for (i = 0; i < btns.length; i++) {
