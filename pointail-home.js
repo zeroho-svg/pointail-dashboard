@@ -33,6 +33,13 @@
  *      모집 일수·당일 마감 표기). Worker /missions 가 상세(detail)도 함께 조회해
  *      {m,pre,begin,end} 반환(캐시 v2 키). 조회 전에는 기존 📅 오픈 한 줄 유지,
  *      로드되면 자동 교체. 요청은 15건씩 분할(Worker 서브요청 한도 보호).
+ *  [v14 2026-08-27] 날짜 의미 정정(사용자 확인) — 어드민 「모집 시작 일시」
+ *      (recruitStartAt)는 **사전모집** 시작이고, 실제 모집은 스케줄의
+ *      「선정 시작 일시」(realStartAt=selRndBeginDt)~선정 종료(recruitEndAt).
+ *      ① 캘린더 노출 날짜 기준을 실제 모집일(realStartAt)로 변경
+ *      ② 카드 날짜 박스: 두 일시가 다르면 📣 사전모집 / 🚀 실제 모집 2단,
+ *         같으면 🚀 실제 모집 한 줄 + (바로 모집) 표기 — 스냅샷 값으로 즉시
+ *         렌더(비동기 조회 불필요, v12의 detail 기반 로직 대체).
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
@@ -144,7 +151,8 @@
   function ini2(s) { return (String(s).replace(/[^가-힣A-Za-z0-9]/g, '').slice(0, 2)) || '?'; }
   function d10(s) { return String(s || '').slice(0, 10); }
   function catOf(c) { return c.campaignType === '인플루언서' ? '인플루언서' : '체험단'; }
-  function calOpenDate(c) { return d10(c.recruitStartAt) || d10(c.createdAt); }
+  /* [v14] 캘린더 노출 기준 = 실제 모집 시작(선정 시작 일시). 구 스냅샷은 모집 시작 일시로 폴백 */
+  function calOpenDate(c) { return d10(c.realStartAt) || d10(c.recruitStartAt) || d10(c.createdAt); }
   function todayStr() { var t = new Date(); return t.getFullYear() + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + ('0' + t.getDate()).slice(-2); }
   function calStateOf(c, soon) {
     if (soon) return 'soon';
@@ -164,7 +172,7 @@
       if (CAL_CANCEL.indexOf(c.campaignStatus) >= 0) return;
       var od = calOpenDate(c); if (!od || od.slice(0, 7) !== mk) return;
       var soon = od > today;
-      var openFull = String(c.recruitStartAt || c.createdAt || '');
+      var openFull = String(c.realStartAt || c.recruitStartAt || c.createdAt || '');   // [v14] 실제 모집 기준
       var openTime = openFull.length >= 16 ? openFull.slice(11, 16) : '';   // HH:MM
       (byDay[od] = byDay[od] || []).push({
         date: od, openTime: openTime, openFull: openFull,
@@ -177,7 +185,8 @@
         country: String(c.advertiserCountry || ''), agency: String(c.companyType || '') === '대행사',
         soon: soon, state: calStateOf(c, soon),
         title: String(c.campaignTitle || ''), no: c.campaignNoText || String(c.campaignNo || ''),
-        contract: sdVat(c, 'contractFinal'), mkt: sdVat(c, 'contractMktCost')
+        contract: sdVat(c, 'contractFinal'), mkt: sdVat(c, 'contractMktCost'),
+        pre: String(c.recruitStartAt || ''), realS: String(c.realStartAt || ''), realE: String(c.recruitEndAt || '')   /* [v14] */
       });
     });
     // 각 날짜의 캠페인을 오픈 시작 시간이 빠른 순으로 정렬(셀·카드 공통)
@@ -241,27 +250,32 @@
       '<span style="font-size:10px;font-weight:700;padding:1px 7px;border-radius:20px;background:' + badgeBg + ';color:' + badgeTx + ';white-space:nowrap;flex:0 0 auto">' + badge + '</span>' +
       '<span style="color:#48505c">' + body + '</span></div>';
   }
-  function datesBoxHTML(no, fbDate, fbTime) {
-    var e = msnEntry(no);
-    var open = '<div class="ptdates" data-no="' + esc(no) + '" style="font-size:11.5px;color:#8a94a6;margin-bottom:6px">📅 오픈 ' + esc(fbDate || '') + (fbTime ? ' <b style="color:#48505c">' + esc(fbTime) + '</b>' : '') + '</div>';
-    if (!e || !e.begin) return open;             // 조회 전/일정 없음 → 기존 오픈 한 줄 유지
+  /* [v14] 스냅샷 값 기반 동기 렌더 — pre(사전모집 시작=모집 시작 일시) /
+   *       realS~realE(실제 모집=선정 시작~종료). pre==realS(분 단위)면 바로 모집. */
+  function datesBoxHTML(x) {
+    var pre = String(x.pre || '').slice(0, 16), rs = String(x.realS || '').slice(0, 16), re = String(x.realE || '').slice(0, 16);
+    if (!rs) {                                   // 구 스냅샷(realStartAt 없음) → 기존 오픈 한 줄
+      return '<div style="font-size:11.5px;color:#8a94a6;margin-bottom:6px">📅 오픈 ' + esc(x.date) + (x.openTime ? ' <b style="color:#48505c">' + esc(x.openTime) + '</b>' : '') + '</div>';
+    }
+    var direct = !pre || pre === rs;             // 사전모집 없이 바로 모집
     var rows = '';
-    if (e.pre) {
-      var pd = dDays(e.pre, e.begin);
-      var pTail = pd === 0 ? '당일 노출' : (pd != null && pd > 0 ? pd + '일간 노출' : '');
+    if (!direct) {
+      var pd = dDays(pre, rs);
+      var pTail = pd === 0 ? '당일' : (pd != null && pd > 0 ? pd + '일간' : '');
       rows += dateLine('#fef3e2', '#b45309', '📣 사전모집',
-        dMD(e.pre) + ' <b>' + dHM(e.pre) + '</b> ~ ' + dMD(e.begin) + ' ' + dHM(e.begin) +
+        dMD(pre) + ' <b>' + dHM(pre) + '</b> ~ ' + dMD(rs) + ' ' + dHM(rs) +
         (pTail ? ' <span style="color:#98a2b3;font-size:10.5px">(' + pTail + ')</span>' : ''));
     }
-    var body = dMD(e.begin) + ' <b>' + dHM(e.begin) + '</b>' +
-      (e.end ? ' ~ ' + dMD(e.end) + ' <b>' + dHM(e.end) + '</b>' : '');
-    if (e.end) {
-      var rd = dDays(e.begin, e.end);
+    var body = dMD(rs) + ' <b>' + dHM(rs) + '</b>' +
+      (re ? ' ~ ' + dMD(re) + ' <b>' + dHM(re) + '</b>' : '');
+    if (re) {
+      var rd = dDays(rs, re);
       var rTail = rd === 0 ? '당일 마감' : (rd != null && rd > 0 ? '모집 ' + (rd + 1) + '일' : '');
       if (rTail) body += ' <span style="color:#98a2b3;font-size:10.5px">(' + rTail + ')</span>';
     }
-    rows += dateLine('#e3f4ed', '#0f6e56', '🚀 캠페인 진행', body);
-    return '<div class="ptdates" data-no="' + esc(no) + '" style="margin-bottom:8px;padding:6px 9px 8px;background:#fbfaf6;border:1px solid #efe9d8;border-radius:9px">' + rows + '</div>';
+    if (direct) body += ' <span style="font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:20px;background:#eef0f3;color:#6b7280">바로 모집</span>';
+    rows += dateLine('#e3f4ed', '#0f6e56', '🚀 실제 모집', body);
+    return '<div style="margin-bottom:8px;padding:6px 9px 8px;background:#fbfaf6;border:1px solid #efe9d8;border-radius:9px">' + rows + '</div>';
   }
   function loadMissions(nos) {
     var need = [], seen = {};
@@ -287,15 +301,6 @@
             if (MSN[no] !== undefined) {
               var t = document.createElement('div');
               t.innerHTML = msnBoxHTML(no);
-              el.parentNode.replaceChild(t.firstChild, el);
-            }
-          });
-          document.querySelectorAll('.ptdates').forEach(function (el) {
-            var no = el.getAttribute('data-no');
-            var e = msnEntry(no);
-            if (e && e.begin) {
-              var t = document.createElement('div');
-              t.innerHTML = datesBoxHTML(no, '', '');
               el.parentNode.replaceChild(t.firstChild, el);
             }
           });
@@ -335,8 +340,7 @@
       '</div>' +
       (x.title ? '<div style="font-size:12.5px;font-weight:600;color:#48505c;margin-bottom:8px;line-height:1.4">' + esc(x.title) + '</div>' : '') +
       (x.no ? msnBoxHTML(x.no) : '') +                                  /* [v11] 🎯 미션 구성 */
-      (x.no ? datesBoxHTML(x.no, x.date, x.openTime)                    /* [v12] 📣 사전모집 / 🚀 캠페인 진행 */
-            : '<div style="font-size:11.5px;color:#8a94a6;margin-bottom:6px">📅 오픈 ' + esc(x.date) + (x.openTime ? ' <b style="color:#48505c">' + esc(x.openTime) + '</b>' : '') + '</div>') +
+      datesBoxHTML(x) +                                                 /* [v14] 📣 사전모집 / 🚀 실제 모집 */
       '<div style="display:flex;flex-wrap:wrap;gap:6px 14px;font-size:11.5px;color:#8a94a6">' +
         (x.round ? '<span>🔁 ' + esc(x.round) + ' 회차</span>' : '') +
         '<span>🙋 신청 ' + f(x.applicant) + '명</span>' +
