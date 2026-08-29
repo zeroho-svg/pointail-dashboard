@@ -45,6 +45,10 @@
  *      회차 상태가 종료류) 카드 배지를 「선정완료」로 표시 + 옆에 회차 선정
  *      N/M명 병기. Worker가 currentSelRndSchedule의 selRndNum·realSelRndNum·
  *      selRndState 를 roundTarget/roundSelected/roundState 로 매핑.
+ *  [v16 2026-08-29] 🛒 구매 칩에 「구매 사이트」 약칭 병기(승인 목업 A안) —
+ *      스냅샷 shoppingChannel(storeChnnlNm) 기준, 채널별 색상: 큐텐=Q10(빨강)·
+ *      라쿠텐=Ra·아마존 재팬=Am·@cosme=@cos·일본쇼핑몰=JP몰·인스타그램=인스타 등
+ *      13종. 채널 없음/'기타'는 기존 「🛒 구매」 그대로. 칩 툴팁=전체 채널명.
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
@@ -177,6 +181,7 @@
       if (CAL_CANCEL.indexOf(c.campaignStatus) >= 0) return;
       var od = calOpenDate(c); if (!od || od.slice(0, 7) !== mk) return;
       var soon = od > today;
+      CHAN[c.campaignNoText || String(c.campaignNo || '')] = String(c.shoppingChannel || '');   // [v16]
       var openFull = String(c.realStartAt || c.recruitStartAt || c.createdAt || '');   // [v14] 실제 모집 기준
       var openTime = openFull.length >= 16 ? openFull.slice(11, 16) : '';   // HH:MM
       (byDay[od] = byDay[od] || []).push({
@@ -222,9 +227,31 @@
     CONTRACT:            ['📝 계약',               '#eef0f3', '#48505c', 1],
     CERTIFIED_DELIVERED: ['📦 배송 인증',          '#eef0f3', '#48505c', 1]
   };
-  function msnChip(item) {
+  /* [v16] 구매 채널(판매 사이트) 약칭·색상 — 값은 스냅샷 shoppingChannel(어드민 storeChnnlNm) */
+  var CHAN = {};                                   // campaignNo → 채널명 (calMonthData에서 채움)
+  var CHAN_LABEL = {
+    '큐텐':        ['Q10',   '#c0392b'],
+    '라쿠텐':      ['Ra',    '#bf0000'],
+    '아마존 재팬': ['Am',    '#c58b1f'],
+    '@cosme':      ['@cos',  '#0e7490'],
+    '일본쇼핑몰':  ['JP몰',  '#185fa5'],
+    '인스타그램':  ['인스타', '#c0398d'],
+    '리워드':      ['리워드', '#128a3a'],
+    '타베로그':    ['타베로그', '#b45309'],
+    '핫페퍼(뷰티)': ['핫페퍼', '#d85a30'],
+    '구글 비즈니스': ['구글',  '#3778c2'],
+    '틱톡':        ['틱톡',  '#1a1f29'],
+    '직접배송':    ['직배',  '#6b7280']
+  };
+  function msnChip(item, chan) {
     var d = MSN_LABEL[item] || [String(item), '#eef0f3', '#6b7280', 1];
-    return '<span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:' + d[1] + ';color:' + d[2] + (d[3] ? ';font-weight:600' : '') + ';white-space:nowrap">' + esc(d[0]) + '</span>';
+    var extra = '', tip = '';
+    if (item === 'PURCHASE' && chan && CHAN_LABEL[chan]) {
+      var cl = CHAN_LABEL[chan];
+      extra = ' <b style="color:' + cl[1] + '">· ' + esc(cl[0]) + '</b>';
+      tip = ' title="구매 사이트: ' + esc(chan) + '"';
+    }
+    return '<span' + tip + ' style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:' + d[1] + ';color:' + d[2] + (d[3] ? ';font-weight:600' : '') + ';white-space:nowrap">' + esc(d[0]) + extra + '</span>';
   }
   function msnEntry(no) {
     var v = MSN[no];
@@ -236,7 +263,8 @@
     if (e === undefined) inner = '<span style="font-size:10.5px;color:#98a2b3">미션 확인 중…</span>';
     else if (!items || !items.length) inner = '<span style="font-size:10.5px;color:#98a2b3">미션 정보 없음</span>';
     else {
-      inner = items.map(msnChip).join(' ');
+      var chan = CHAN[no] || '';                   /* [v16] 구매 사이트 병기 */
+      inner = items.map(function (i) { return msnChip(i, chan); }).join(' ');
       var extra = items.filter(function (i) { return i !== 'PURCHASE'; }).length;
       head = '(기본 + 추가 ' + extra + ')';
     }
