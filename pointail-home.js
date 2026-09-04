@@ -49,6 +49,13 @@
  *      스냅샷 shoppingChannel(storeChnnlNm) 기준, 채널별 색상: 큐텐=Q10(빨강)·
  *      라쿠텐=Ra·아마존 재팬=Am·@cosme=@cos·일본쇼핑몰=JP몰·인스타그램=인스타 등
  *      13종. 채널 없음/'기타'는 기존 「🛒 구매」 그대로. 칩 툴팁=전체 채널명.
+ *  [v17 2026-09-04] 🧭 운영 탭 신설(승인 목업) — 캠페인 캘린더·모집 마감 미달
+ *      체크를 홈에서 운영 탭으로 이동, 서브탭 3종(📅 캘린더 / ✍️ 리뷰 마감 /
+ *      ⏰ 모집 마감 미달)으로 구분. 홈은 KPI·월별이익·오늘의 액션만 유지.
+ *      ✍️ 리뷰 마감 캘린더(신규): 최종 구매일(=마지막 회차 선정 종료일,
+ *      recruitEndAt) 기준 🔔 D+9 체크일(미완료 시 독려)·⛔ D+12 마감일(100%
+ *      목표). 완료 수 = missionDoneCount(어드민 미션 완료 인원) / 선정 인원.
+ *      내비 배치는 pointail-nav.js v4의 ops 그룹이 흡수.
  * ──────────────────────────────────────────────────────────── */
 (function () {
   'use strict';
@@ -584,6 +591,180 @@
     '</div>';
   }
 
+  /* ── ✍️ 리뷰 마감 캘린더 [v17] ────────────────────────────────
+   *  최종 구매일(마지막 회차 선정 종료일=recruitEndAt) 기준
+   *  🔔 D+9 체크일(미완료 → 독려) · ⛔ D+12 마감일(100% 완료 목표).
+   *  완료 = missionDoneCount(미션 완료 인원) ≥ selectedCount(선정 인원).   */
+  var REV = { y: null, m: null, sel: null };
+  var REV_CHECK_D = 9, REV_DUE_D = 12;
+  function revAdd(ds, days) {
+    var d = new Date(ds + 'T00:00:00');
+    if (!isFinite(d)) return '';
+    d.setDate(d.getDate() + days);
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function revItems() {
+    var out = [];
+    camps().forEach(function (c) {
+      if (CAL_CANCEL.indexOf(c.campaignStatus) >= 0) return;
+      var end = d10(c.recruitEndAt); if (!end) return;
+      var sel = n(c.selectedCount); if (!(sel > 0)) return;
+      out.push({
+        brand: String(c.storeName || c.corpName || '').trim() || '(브랜드 미상)',
+        corp: String(c.corpName || '').trim(), agency: String(c.companyType || '') === '대행사',
+        rep: String(c.salesManager || '미배정').trim() || '미배정',
+        cat: catOf(c), country: String(c.advertiserCountry || ''),
+        no: c.campaignNoText || String(c.campaignNo || ''),
+        end: end, check: revAdd(end, REV_CHECK_D), due: revAdd(end, REV_DUE_D),
+        sel: sel, done: n(c.missionDoneCount)
+      });
+    });
+    return out;
+  }
+  function revMD(ds) { return ds ? (parseInt(ds.slice(5, 7), 10) + '/' + parseInt(ds.slice(8, 10), 10)) : ''; }
+  function revCard(x, type) {
+    var complete = x.done >= x.sel;
+    var col = complete ? '#128a3a' : (type === 'due' ? '#c0392b' : '#b45309');
+    var bd = complete ? '#bfe3d4' : (type === 'due' ? '#f3cfcf' : '#f5d9a8');
+    var badge = complete ? '✅ 100% 완료' : (type === 'due' ? '⛔ 12일 마감' : '🔔 9일차 체크');
+    var pct = Math.min(100, Math.round(x.done / x.sel * 100));
+    var today = todayStr(), lack = Math.max(0, x.sel - x.done);
+    var dueTag = x.due === today ? ' <b style="color:#c0392b">(오늘' + (lack ? ' · 잔여 ' + f(lack) + '명' : '') + ')</b>'
+      : (x.due > today ? ' <b style="color:#c0392b">D-' + Math.round((new Date(x.due) - new Date(today)) / 86400000) + '</b>' : ' 지남');
+    var hint = '';
+    if (!complete && type === 'check') hint = '<span style="font-size:11px;font-weight:700;color:#b45309;background:#fef3e2;border:1px solid #f5d9a8;border-radius:8px;padding:3px 10px">💬 미작성 ' + f(lack) + '명 독려 필요</span>';
+    if (!complete && type === 'due') hint = '<span style="font-size:11px;font-weight:700;color:#c0392b;background:#fceaea;border:1px solid #f0b6b6;border-radius:8px;padding:3px 10px">🚨 ' + (x.due === today ? '오늘 안에 ' : '') + f(lack) + '명 완료 필요</span>';
+    return '<div style="background:#fff;border:1px solid ' + bd + ';border-radius:12px;padding:12px 13px">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px">' +
+        '<span style="font-size:14px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(x.brand) + '</span>' +
+        '<span style="font-size:10.5px;padding:2px 8px;border-radius:20px;background:' + col + ';color:#fff;font-weight:800;flex:0 0 auto">' + badge + '</span>' +
+      '</div>' +
+      '<div style="font-size:11px;color:#8a94a6;margin-bottom:8px">' + CAT_STYLE[x.cat].ic + ' ' + x.cat + (x.country ? ' · ' + esc(x.country) : '') + (x.corp ? ' · ' + esc(x.corp) : '') + (x.agency ? ' <span style="color:#b45309;font-weight:600">(대행사)</span>' : '') + ' · 담당 ' + esc(x.rep) + '</div>' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">' +
+        '<div style="font-size:11.5px;color:#8a94a6">✍️ 리뷰(미션) 완료</div>' +
+        '<div style="font-size:18px;font-weight:800;color:' + col + '">' + f(x.done) + '<span style="font-size:12px;color:#8a94a6;font-weight:500"> / ' + f(x.sel) + '명</span></div>' +
+      '</div>' +
+      '<div style="height:7px;border-radius:5px;background:#eceff3;position:relative;margin-bottom:8px">' +
+        '<div style="position:absolute;left:0;top:0;height:7px;width:' + pct + '%;border-radius:5px;background:' + col + '"></div>' +
+      '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11.5px;color:#8a94a6">' +
+        '<span>🛒 최종 구매 ' + revMD(x.end) + '</span>' +
+        '<span>🔔 체크일 ' + revMD(x.check) + (x.check === today ? ' <b style="color:#b45309">(오늘)</b>' : '') + '</span>' +
+        '<span>⛔ 마감 ' + revMD(x.due) + dueTag + '</span>' +
+      '</div>' +
+      '<div style="margin-top:8px;padding-top:8px;border-top:1px dashed #eef0f3;display:flex;gap:5px;flex-wrap:wrap">' +
+        (x.no ? '<a href="' + ADMIN_CAMP_URL + '" target="_blank" rel="noopener" onclick="window.PTHOME&&PTHOME.admGo(\'' + esc(x.no) + '\')" style="font-size:11px;font-weight:700;color:#3778c2;background:#eef4fc;border:1px solid #d5e4f5;border-radius:8px;padding:3px 10px;text-decoration:none">🔗 № ' + esc(x.no) + ' 관리자 열기 ↗</a>' : '') +
+        hint +
+      '</div>' +
+    '</div>';
+  }
+  function reviewHTML() {
+    if (REV.y == null) { var tt = new Date(); REV.y = tt.getFullYear(); REV.m = tt.getMonth(); }
+    var mk = REV.y + '-' + ('0' + (REV.m + 1)).slice(-2), today = todayStr();
+    var items = revItems(), byDay = {};
+    var chkToday = 0, dueToday = 0, pendSum = 0, doneMonth = 0;
+    items.forEach(function (x) {
+      var complete = x.done >= x.sel;
+      if (x.check.slice(0, 7) === mk) (byDay[x.check] = byDay[x.check] || []).push({ x: x, t: 'check' });
+      if (x.due.slice(0, 7) === mk) (byDay[x.due] = byDay[x.due] || []).push({ x: x, t: 'due' });
+      if (!complete && x.check === today) chkToday++;
+      if (!complete && x.due === today) dueToday++;
+      if (!complete && x.end < today && today <= x.due) pendSum += (x.sel - x.done);   // 최종 구매일이 지난 건만
+      if (complete && x.due.slice(0, 7) === mk) doneMonth++;
+    });
+    var keys = Object.keys(byDay).sort();
+    if (!REV.sel || REV.sel.slice(0, 7) !== mk || !byDay[REV.sel]) REV.sel = byDay[today] ? today : (keys[0] || null);
+
+    var WD = ['일', '월', '화', '수', '목', '금', '토'];
+    var first = new Date(REV.y, REV.m, 1), start = first.getDay(), days = new Date(REV.y, REV.m + 1, 0).getDate();
+    var grid = '<div style="display:grid;grid-template-columns:repeat(7,1fr);background:#f7f8fa">';
+    WD.forEach(function (w, i) { grid += '<div style="text-align:center;padding:6px 0;font-size:11px;color:' + (i === 0 ? '#c0392b' : '#8a94a6') + '">' + w + '</div>'; });
+    grid += '</div><div style="display:grid;grid-template-columns:repeat(7,1fr)">';
+    var c2, dd;
+    for (c2 = 0; c2 < start; c2++) grid += '<div style="min-height:80px;border-top:1px solid #eef0f3"></div>';
+    for (dd = 1; dd <= days; dd++) {
+      var key = mk + '-' + ('0' + dd).slice(-2), arr = byDay[key] || [], sun = (dd + start - 1) % 7 === 0;
+      var isSel = key === REV.sel, isToday = key === today;
+      grid += '<div onclick="' + (arr.length ? 'window.PTHOME&&PTHOME.revSel(\'' + key + '\')' : '') + '" style="min-height:80px;border-top:1px solid #eef0f3;border-left:1px solid #eef0f3;padding:4px 5px;' + (arr.length ? 'cursor:pointer;' : '') + (isSel ? 'background:#eef5ff;' : '') + '">' +
+        '<div style="font-size:11px;color:' + (sun ? '#c0392b' : '#8a94a6') + ';font-weight:' + (isSel || isToday ? '700' : '400') + '">' + dd + (isToday ? '<span style="font-size:9px;color:#185fa5;font-weight:700"> 오늘</span>' : '') + '</div>';
+      arr.slice(0, 2).forEach(function (e) {
+        var complete = e.x.done >= e.x.sel;
+        var ic = e.t === 'due' ? '⛔' : '🔔';
+        var col = complete ? '#0f6e56' : (e.t === 'due' ? '#c0392b' : '#b45309');
+        grid += '<div style="font-size:10px;font-weight:600;line-height:1.25;margin-top:2px;color:#1a1f29;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + ic + ' ' + esc(e.x.brand) + '</div>' +
+          '<div style="font-size:9.5px;margin:0 0 2px 13px;color:' + col + '">리뷰 ' + f(e.x.done) + '/' + f(e.x.sel) + (complete ? ' ✓완료' : (e.t === 'due' ? ' · 마감' : ' · 체크')) + '</div>';
+      });
+      if (arr.length > 2) grid += '<div style="font-size:9.5px;color:#185fa5;margin-left:13px">+' + (arr.length - 2) + '건 더</div>';
+      grid += '</div>';
+    }
+    grid += '</div>';
+
+    var selArr = (REV.sel && byDay[REV.sel]) ? byDay[REV.sel] : [];
+    var sp = REV.sel ? REV.sel.split('-') : null;
+    var detHead = sp ? ('🗂 ' + parseInt(sp[1], 10) + '월 ' + parseInt(sp[2], 10) + '일 · 🔔 체크 ' + selArr.filter(function (e) { return e.t === 'check'; }).length + '건 · ⛔ 마감 ' + selArr.filter(function (e) { return e.t === 'due'; }).length + '건') : '날짜를 선택하세요';
+    var detBody = selArr.length
+      ? '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:10px;margin-top:10px">' + selArr.map(function (e) { return revCard(e.x, e.t); }).join('') + '</div>'
+      : '<div style="color:#98a2b3;font-size:13px;padding:10px 0">이 달에 리뷰 체크·마감 일정이 없습니다.</div>';
+
+    return '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px">' +
+      '<div style="font-size:14px;font-weight:700">✍️ 리뷰 마감 캘린더 <span style="font-size:12px;font-weight:400;color:#8a94a6">— 최종 구매일 기준 <b style="color:#b45309">D+' + REV_CHECK_D + ' 체크(독려)</b> · <b style="color:#c0392b">D+' + REV_DUE_D + ' 마감(100% 목표)</b></span></div>' +
+      '<div style="display:flex;align-items:center;gap:6px">' +
+        '<button onclick="window.PTHOME&&PTHOME.revNav(-1)" style="width:28px;height:28px;border:1px solid #e5e8ee;background:#fff;border-radius:8px;cursor:pointer;color:#48505c">‹</button>' +
+        '<span style="font-size:13px;font-weight:700;min-width:96px;text-align:center">' + REV.y + '년 ' + (REV.m + 1) + '월</span>' +
+        '<button onclick="window.PTHOME&&PTHOME.revNav(1)" style="width:28px;height:28px;border:1px solid #e5e8ee;background:#fff;border-radius:8px;cursor:pointer;color:#48505c">›</button>' +
+        '<button onclick="window.PTHOME&&PTHOME.revToday()" style="height:28px;padding:0 10px;border:1px solid #e5e8ee;background:#fff;border-radius:8px;cursor:pointer;font-size:12px;color:#48505c">오늘</button>' +
+      '</div></div>' +
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;font-size:11.5px">' +
+        (chkToday ? calChip('#fef3e2', '#b45309', '<b>🔔 오늘 9일차 체크 ' + chkToday + '건</b>') : '') +
+        (dueToday ? calChip('#fceaea', '#c0392b', '<b>⛔ 오늘 12일 마감 ' + dueToday + '건</b>') : '') +
+        (pendSum ? calChip('#fdecec', '#c0392b', '진행 중 미완료 리뷰 ' + f(pendSum) + '건') : '') +
+        (doneMonth ? calChip('#e3f4ed', '#0f6e56', '이번달 완료 ' + doneMonth + '건 (100%)') : '') +
+        '<span style="margin-left:auto;color:#98a2b3;font-size:10.5px">최종 구매일 = 마지막 회차 선정 종료일 · 완료 = 미션 완료 인원 기준 · 3시간마다 자동 동기화</span>' +
+      '</div>' +
+      '<div style="border:1px solid #eef0f3;border-radius:10px;overflow:hidden">' + grid + '</div>' +
+      '<div style="font-size:13px;font-weight:700;margin-top:12px">' + detHead + '</div>' + detBody;
+  }
+
+  /* ── 🧭 운영 탭 [v17] — 서브탭 3종 컨테이너 ─────────────────── */
+  var OPS = { sub: 'cal' };
+  function opsPill(key, lab) {
+    var on = OPS.sub === key;
+    return '<button onclick="window.PTHOME&&PTHOME.opsSub(\'' + key + '\')" style="font-size:12.5px;font-weight:700;padding:6px 14px;border-radius:9px;cursor:pointer;' +
+      (on ? 'background:#111827;color:#fff;border:1.5px solid #111827' : 'background:#fff;border:1.5px solid #e5e8ee;color:#667085') + '">' + lab + '</button>';
+  }
+  function renderOps() {
+    var host = document.getElementById('tab-ops'); if (!host) return;
+    if (!camps().length) {
+      host.innerHTML = '<div style="padding:60px 20px;text-align:center;color:#8a94a6"><div style="font-size:34px;margin-bottom:10px">🧭</div><div style="font-size:14px">데이터 로드 후 표시됩니다. 상단 <b>⚡ API 동기화</b>를 눌러주세요.</div></div>';
+      return;
+    }
+    var body;
+    if (OPS.sub === 'review') {
+      /* reviewHTML은 내용만 반환 → 카드로 감싼다 */
+      body = '<div style="background:#fff;border:1px solid #eef0f3;border-radius:12px;padding:14px 16px">' + reviewHTML() + '</div>';
+    } else if (OPS.sub === 'short') {
+      body = checkupHTML();   // 자체 카드 포함(0건이면 '')
+      if (!body) body = '<div style="background:#fff;border:1px solid #eef0f3;border-radius:12px;padding:30px 16px;text-align:center;color:#0f6e56;font-size:14px">✅ 최근 7일 마감 캠페인 중 실미달이 없습니다.</div>';
+    } else {
+      body = calendarHTML();  // 자체 카드 포함
+    }
+    host.innerHTML =
+      '<div style="padding:18px 20px;line-height:1.55">' +
+        '<div style="display:flex;gap:6px;margin-bottom:4px;flex-wrap:wrap">' +
+          opsPill('cal', '📅 캠페인 캘린더 <span style="font-weight:400">(오픈·오픈예정)</span>') +
+          opsPill('review', '✍️ 리뷰 마감') +
+          opsPill('short', '⏰ 모집 마감 미달') +
+        '</div>' + body +
+      '</div>';
+  }
+  function showOps() {
+    document.querySelectorAll('.panel').forEach(function (p) { p.classList.remove('active'); });
+    document.querySelectorAll('#main-tabs .tab, #main-tabs .subtab').forEach(function (x) { x.classList.remove('active'); });
+    var p = document.getElementById('tab-ops'); if (p) p.classList.add('active');
+    var b = document.getElementById('tab-btn-ops'); if (b) b.classList.add('active');
+    renderOps();
+  }
+
   function render() {
     var host = document.getElementById('tab-home'); if (!host) return;
     if (!camps().length && !members().length) {
@@ -655,8 +836,9 @@
             '<div style="font-size:12.5px;font-weight:600;color:#8a94a6;margin-bottom:6px">🔔 오늘의 액션 <span style="font-weight:400">— 광고주 관리로 이동</span></div>' + actions +
             '<div style="font-size:11px;color:#98a2b3;margin-top:8px">기준: 법인명별 마지막 캠페인 신청일 · ⚡ 동기화 시점 데이터</div></div>' +
         '</div>' +
-        calendarHTML() +
-        checkupHTML() +
+        /* [v17] 캘린더·미달 체크는 🧭 운영 탭으로 이동 — 바로가기만 표시 */
+        '<div onclick="window.PTHOME&&PTHOME.goOps()" style="margin-top:16px;background:#fff;border:1px dashed #d5dbe3;border-radius:12px;padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;color:#48505c;font-size:13px" onmouseover="this.style.borderColor=\'#9aa6b5\'" onmouseout="this.style.borderColor=\'#d5dbe3\'">' +
+          '<span style="font-size:18px">🧭</span><span><b>캠페인 캘린더 · 리뷰 마감 · 모집 마감 미달 체크</b>는 <b style="color:#185fa5">운영 탭</b>으로 이동했습니다 — 클릭하여 열기</span></div>' +
       '</div>';
   }
 
@@ -684,13 +866,35 @@
       var tm = nav.querySelector('.tabs-main') || nav;
       tm.insertBefore(b, tm.firstChild);
     }
+    /* [v17] 🧭 운영 탭 패널·버튼 (nav.js v4 ops 그룹이 흡수) */
+    if (!document.getElementById('tab-ops')) {
+      var ref2 = document.querySelector('.panel');
+      if (ref2 && ref2.parentNode) { var p2 = document.createElement('div'); p2.id = 'tab-ops'; p2.className = 'panel'; ref2.parentNode.appendChild(p2); }
+    }
+    if (!document.getElementById('tab-btn-ops')) {
+      var anyTab2 = nav.querySelector('.tab');
+      var b2 = document.createElement('button');
+      b2.id = 'tab-btn-ops'; b2.className = anyTab2 ? anyTab2.className.replace(' active', '') : 'tab';
+      b2.textContent = '🧭 운영'; b2.type = 'button';
+      b2.addEventListener('click', showOps);
+      var tm2 = nav.querySelector('.tabs-main') || nav;
+      var hb = document.getElementById('tab-btn-home');
+      if (hb && hb.nextSibling) tm2.insertBefore(b2, hb.nextSibling); else tm2.appendChild(b2);
+    }
   }
   if (typeof window.showTab === 'function' && !window.showTab.__ptHome) {
     var _st = window.showTab;
-    window.showTab = function () { var b = document.getElementById('tab-btn-home'); if (b) b.classList.remove('active'); return _st.apply(this, arguments); };
+    window.showTab = function () {
+      var b = document.getElementById('tab-btn-home'); if (b) b.classList.remove('active');
+      var b2 = document.getElementById('tab-btn-ops'); if (b2) b2.classList.remove('active');   /* [v17] */
+      return _st.apply(this, arguments);
+    };
     window.showTab.__ptHome = true;
   }
-  function calRerender() { var p = document.getElementById('tab-home'); if (p && p.classList.contains('active')) render(); }
+  function calRerender() {
+    var p = document.getElementById('tab-home'); if (p && p.classList.contains('active')) render();
+    var o = document.getElementById('tab-ops'); if (o && o.classList.contains('active')) renderOps();   /* [v17] */
+  }
   window.PTHOME = {
     show: show, render: render,
     calSel: function (ds) { CAL.sel = ds; calRerender(); },
@@ -698,6 +902,13 @@
     calToday: function () { var t = new Date(); CAL.y = t.getFullYear(); CAL.m = t.getMonth(); CAL.sel = null; calRerender(); },
     /* [v9] 미달 체크 탭 전환(1=어제, 3=최근3일, 7=최근7일) */
     chkWin: function (w) { CHK.win = w; calRerender(); },
+    /* [v17] 운영 탭 */
+    showOps: showOps,
+    goOps: function () { var b = document.getElementById('tab-btn-ops'); if (b) b.click(); else showOps(); },
+    opsSub: function (s) { OPS.sub = s; renderOps(); },
+    revSel: function (ds) { REV.sel = ds; calRerender(); },
+    revNav: function (d) { if (REV.y == null) { var t2 = new Date(); REV.y = t2.getFullYear(); REV.m = t2.getMonth(); } REV.m += d; if (REV.m < 0) { REV.m = 11; REV.y--; } else if (REV.m > 11) { REV.m = 0; REV.y++; } REV.sel = null; calRerender(); },
+    revToday: function () { var t3 = new Date(); REV.y = t3.getFullYear(); REV.m = t3.getMonth(); REV.sel = null; calRerender(); },
     /* [v6] 캠페인 번호 클릭: 번호를 클립보드에 복사(관리자 검색창에 바로 붙여넣기 용).
      *      새 탭 이동은 <a target="_blank"> 기본 동작. 이벤트 버블은 여기서 차단. */
     admGo: function (no) {
@@ -716,6 +927,8 @@
         ensure();
         var p = document.getElementById('tab-home');
         if (p && p.classList.contains('active')) render();
+        var o = document.getElementById('tab-ops');
+        if (o && o.classList.contains('active')) renderOps();   /* [v17] */
       } catch (e) {}
     }, 5000);
     ensure();

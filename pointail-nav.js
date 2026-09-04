@@ -17,6 +17,8 @@
 
   var GROUPS = [
     { key: 'home', label: '🏠 홈', ids: ['tab-btn-home'], panels: ['tab-home'] },
+    // [v4 2026-09-04] 운영 그룹 — 캠페인 캘린더·리뷰 마감·모집 마감 미달(홈에서 이동, pointail-home.js v17)
+    { key: 'ops', label: '🧭 운영', ids: ['tab-btn-ops'], panels: ['tab-ops'] },
     // 경영: 하위 표시 순서 [손익 오버뷰, 매출 대시보드], 단 클릭 진입 기본은 매출 대시보드
     { key: 'mgmt', label: '📊 경영', ids: ['tab-btn-cost', 'tab-btn-sales-dash'], defaultId: 'tab-btn-sales-dash', panels: ['tab-cost', 'tab-sales-dash'] },
     { key: 'sales', label: '💼 영업', ids: ['tab-btn-dashboard', 'tab-btn-sales-perf', 'tab-btn-advmgr'], panels: ['tab-dashboard', 'tab-sales-perf', 'tab-advmgr'] },
