@@ -3115,7 +3115,7 @@ function sd_krw(r, id) {
 // - 따라서 sd_vatIncl은 sd_val과 동일 (이미 VAT 포함)
 // - 표기 목적상 함수명은 유지 (VAT 포함 기준임을 코드로 명시)
 const VAT_RATE = 1.1;
-const EXEC_FIELDS_NO_VAT = ['execTotalAmount','execNetAmount','execMktAmount'];
+const EXEC_FIELDS_NO_VAT = ['execTotalAmount','execNetAmount','execMktAmount','contractMktCost'];   // 2026-09-04 (계약)마케팅서비스도 저장 시 ×1.1
 
 function sd_vatIncl(r, id) {
   // DB에 이미 VAT 포함 저장 → 그대로 반환
@@ -4512,7 +4512,7 @@ async function syncDbTab(type) {
     if (!sheetData || !sheetData.rows) throw new Error('시트 데이터 없음');
 
     const prevCount = DB[type]?.length || 0;
-    const VAT_COLS = ['execTotalAmount','execNetAmount','execMktAmount'];
+    const VAT_COLS = ['execTotalAmount','execNetAmount','execMktAmount','contractMktCost'];   // 2026-09-04 contractMktCost 추가(부가세 포함 통일)
     const JPY_COLS = ['contractSaleSum','contractMktCost','contractVat','contractFinal',
                       'contractSalePrice','execMktAmount','execNetAmount','execTotalAmount','execDiscount','pointRevenue'];
 
@@ -6167,9 +6167,10 @@ function applyRulesToRow(type, row) {
   const r = {...row};
   const country = String(r.advertiserCountry||'').trim();
 
-  // ── 한국/일본 공통: (실행) 금액 VAT 미포함 → ×1.1 적용해서 DB에 저장 ──
-  // 구글시트 업로드값은 부가세 미포함 → 앱 저장 시 부가세 포함으로 통일
-  const VAT_EXEC_COLS = ['execTotalAmount','execNetAmount','execMktAmount'];
+  // ── 한국/일본 공통: VAT 미포함 금액 → ×1.1 적용해서 DB에 저장 ──
+  // 구글시트 업로드값·API의 (실행) 금액과 (계약) 마케팅서비스(공급가)는 부가세 미포함
+  // → 앱 저장 시 부가세 포함으로 통일 (2026-09-04: contractMktCost 추가 — 전체매출과 기준 일치)
+  const VAT_EXEC_COLS = ['execTotalAmount','execNetAmount','execMktAmount','contractMktCost'];
   VAT_EXEC_COLS.forEach(col => {
     if (!(col in r) || r[col] === '' || r[col] === null) return;
     if (r[col+'_vat'] !== undefined) return; // 이미 VAT 적용된 경우 건너뜀
