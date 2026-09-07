@@ -24,7 +24,7 @@
   var MV = { view: 'day', selMonth: null, obWin: 90 };
   var SNAP = null;          // /appmembers 응답
   var AP = null;            // /applies 맵
-  var loading = false, crawling = false, crawlMsg = '';
+  var loading = false, crawling = false, crawlMsg = '', crawlDone = false;
 
   var INFLOW = [
     { id: 'INSTAGRAM',         label: 'Instagram',             color: '#D6567A' },
@@ -92,6 +92,7 @@
           if (j.remaining > 0 && j.added > 0) { setTimeout(step, 300); }
           else {
             crawling = false;
+            crawlDone = true;   // [v4] 이 세션에서는 자동 수집 재시작 안 함
             // 최신 맵 반영 후 재렌더
             fetch(WORKER + 'applies?t=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.json(); })
               .then(function (m2) { AP = m2 || AP; render(); });
@@ -347,8 +348,10 @@
       '</div>' +
       '</div>';
 
-    /* 미수집분 있으면 자동 수집 시작 */
-    if (covPct < 100) crawl();
+    /* 미수집분 있으면 자동 수집 시작 — [v4] 서버가 이미 수집 완료(remaining=0)를
+       보고한 세션에서는 재시작하지 않는다(KV 반영 지연으로 covered<100%로 보여도
+       render→crawl 무한 반복·KV 되감기 유발 방지) */
+    if (covPct < 100 && !crawlDone) crawl();
   }
 
   /* ── 탭 전환 ── */
@@ -393,7 +396,7 @@
 
   window.PTMEM = {
     show: show,
-    reload: function () { SNAP = null; AP = null; loadData(render); render(); },
+    reload: function () { SNAP = null; AP = null; crawlMsg = ''; crawlDone = false; loadData(render); render(); },
     view: function (v) { MV.view = v; render(); },
     month: function (m) { MV.selMonth = m; render(); },
     win: function (w) { MV.obWin = w; render(); },
