@@ -108,7 +108,13 @@
     var keys, src, labFn;
     if (MV.view === 'day') {
       src = byDay;
-      keys = Object.keys(byDay).filter(function (k) { return k.slice(0, 7) === MV.selMonth; }).sort();
+      /* [v2] 월의 모든 날짜를 0으로 채워 연속된 막대로 표시 */
+      keys = [];
+      if (MV.selMonth) {
+        var dy = parseInt(MV.selMonth.slice(0, 4), 10), dm = parseInt(MV.selMonth.slice(5, 7), 10);
+        var dmax = new Date(dy, dm, 0).getDate();
+        for (var di = 1; di <= dmax; di++) keys.push(MV.selMonth + '-' + ('0' + di).slice(-2));
+      }
       labFn = function (k) { return parseInt(k.slice(8, 10), 10); };
     } else if (MV.view === 'month') {
       src = byMonth; keys = Object.keys(byMonth).sort().slice(-24);
@@ -117,9 +123,9 @@
       src = byYear; keys = Object.keys(byYear).sort();
       labFn = function (k) { return k; };
     }
-    var maxV = 1; keys.forEach(function (k) { maxV = Math.max(maxV, src[k]); });
+    var maxV = 1; keys.forEach(function (k) { maxV = Math.max(maxV, src[k] || 0); });
     var bars = keys.map(function (k) {
-      var v = src[k], h = Math.max(v ? 4 : 0, Math.round(v / maxV * 120));
+      var v = src[k] || 0, h = Math.max(v ? 4 : 0, Math.round(v / maxV * 120));
       return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0" title="' + esc(k) + ' · ' + f(v) + '명">' +
         '<div style="font-size:9px;color:#8a94a6;line-height:1">' + (v || '') + '</div>' +
         '<div style="display:flex;align-items:flex-end;height:120px"><div style="width:70%;min-width:5px;max-width:26px;height:' + h + 'px;background:#3778c2;opacity:.85;border-radius:3px 3px 0 0"></div></div>' +
