@@ -580,7 +580,7 @@ const TYPE_MAP    = { SHOPPING: "쇼핑", INFLUENCER: "인플루언서", PLACE: 
 const SVC_MAP     = { PUGSHOP: "퍼그샵", POINTAIL_BIZ: "포인테일 비즈", STORELINK: "스토어링크" };
 const STATE_MAP   = { SELECT_SUCCESS: "선정 완료", ADD_RECRUIT: "추가 모집중", REGISTER_WAITING: "등록 대기", REGISTER: "등록", REGISTER_CANCEL: "등록 취소", REGISTER_SUCCESS: "등록 완료", RECRUIT: "모집중", STOP: "일시 중지", CAMPAIGN_CLOSE: "캠페인 종료", CAMPAIGN_CANCEL: "캠페인 취소" };
 const MEMBER_MAP  = { COMMON_ADVERTISER: "일반 광고주", AGENCY: "대행사" };
-const MEMSTATE_MAP= { NORMAL: "정상", ACTIVE: "정상", STOP: "정지", SUSPEND: "정지", BLOCK: "정지", WITHDRAW: "탈퇴", LEAVE: "탈퇴", DORMANT: "휴면" };
+const MEMSTATE_MAP= { NORMAL: "정상", ACTIVE: "정상", STOP: "정지", SUSPEND: "정지", BLOCK: "정지", WITHDRAW: "탈퇴", WITHDRAWAL: "탈퇴", LEAVE: "탈퇴", DORMANT: "휴면" };
 const COUNTRY_MAP = { KR: "한국", JP: "일본" };
 const PAYSTATE_MAP= { PAYMENT_WAIT: "결제대기", PAYMENT_SUCCESS: "결제완료", PAYMENT_CANCEL: "결제취소" };
 

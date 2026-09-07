@@ -58,6 +58,8 @@
   function d10(s) { return String(s || '').slice(0, 10); }
   function todayStr() { var t = new Date(); return t.getFullYear() + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + ('0' + t.getDate()).slice(-2); }
   function dayDiff(a, b) { var x = Date.parse(a), y = Date.parse(b); return (isFinite(x) && isFinite(y)) ? Math.round((y - x) / 86400000) : null; }
+  // [v5] 탈퇴 판정 — Worker MEMSTATE_MAP 미매핑 enum(WITHDRAWAL 등) 원문도 포함
+  function isOut(m) { return /탈퇴|WITHDRAW/.test(String((m && m.state) || '')); }
 
   /* ── 데이터 로드 ── */
   function loadData(cb) {
@@ -143,25 +145,33 @@
     var byDay = {}, byMonth = {}, byYear = {}, byInflow = {};
     var coh = {};
     mems.forEach(function (m) {
-      var jd = d10(m.join); if (!jd) return;
+      var jd = d10(m.join);
+      /* [v5] 활성화·온보딩 집계는 가입일 유무와 무관하게 수행
+         (탈퇴 회원 475명은 가입일이 비어 있어 v3~v4에서 수집 94%로 잘못 표시됨) */
+      var e = AP && AP[m.no];
+      if (e !== undefined) {
+        covered++;
+        if (e.c > 0) act++;
+        else if (!isOut(m)) obAll.push(m);
+      }
+      var ch = inflowOf(m.inflow);
+      byInflow[ch.id] = (byInflow[ch.id] || 0) + 1;   // [v5] 유입경로 도넛은 전체 회원 기준(가입일 없어도 집계)
+      if (!jd) return;   // 이하 날짜 기반 통계(추이·코호트)만 가입일 필요
       if (jd === today) todayNew++;
       if (jd.slice(0, 7) === thisM) monthNew++;
       if (jd.slice(0, 7) === prevM) prevNew++;
-      var ch = inflowOf(m.inflow);
-      byInflow[ch.id] = (byInflow[ch.id] || 0) + 1;
       if (!byDay[jd]) byDay[jd] = {}; byDay[jd][ch.id] = (byDay[jd][ch.id] || 0) + 1;
       var mk = jd.slice(0, 7); if (!byMonth[mk]) byMonth[mk] = {}; byMonth[mk][ch.id] = (byMonth[mk][ch.id] || 0) + 1;
       var yk = jd.slice(0, 4); if (!byYear[yk]) byYear[yk] = {}; byYear[yk][ch.id] = (byYear[yk][ch.id] || 0) + 1;
 
-      var e = AP && AP[m.no];
       if (!coh[mk]) coh[mk] = { join: 0, cov: 0, act: 0, dsum: 0, dcnt: 0 };
       coh[mk].join++;
       if (e !== undefined) {
-        covered++; coh[mk].cov++;
+        coh[mk].cov++;
         if (e.c > 0) {
-          act++; coh[mk].act++;
+          coh[mk].act++;
           if (e.f) { var dd = dayDiff(jd, e.f); if (dd != null && dd >= 0) { coh[mk].dsum += dd; coh[mk].dcnt++; } }
-        } else if (m.state !== '탈퇴') obAll.push(m);
+        }
       }
     });
     var rate = covered ? Math.round(act / covered * 100) : 0;
@@ -171,7 +181,7 @@
     /* 유입경로 도넛(conic-gradient) + 리스트 */
     var inflowSorted = Object.keys(byInflow).map(function (id) { return { ch: inflowOf(id), cnt: byInflow[id] }; })
       .sort(function (a, b) { return b.cnt - a.cnt; });
-    var tot = mems.length, acc = 0, segs = [];
+    var tot = mems.length, acc = 0, segs = [];   // 도넛 세그먼트는 아래에서 byInflow 합 기준으로 계산
     inflowSorted.forEach(function (x) {
       var from = acc / tot * 100; acc += x.cnt;
       segs.push(x.ch.color + ' ' + from.toFixed(2) + '% ' + (acc / tot * 100).toFixed(2) + '%');
@@ -424,7 +434,7 @@
       var lines = [];
       SNAP.members.forEach(function (m) {
         var e = AP && AP[m.no];
-        if (e === undefined || e.c > 0 || m.state === '탈퇴') return;
+        if (e === undefined || e.c > 0 || isOut(m)) return;
         lines.push('"' + (m.name || '') + '",' + m.no + ',"' + d10(m.join) + '",' + (dayDiff(d10(m.join), today) || 0) + ',"' + inflowOf(m.inflow).label + '","' + m.state + '"');
       });
       csvDownload('pointail_온보딩필요회원.csv', '이름,회원번호,가입일,경과일,유입경로,상태', lines);
