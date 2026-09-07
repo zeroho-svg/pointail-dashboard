@@ -133,6 +133,58 @@ async function fetchAllAdvertisers(token, pageSize) {
   return { all, unauthorized };
 }
 
+// ── 앱(체험단) 회원 전 페이지 수집 (pageSize 1000 → 약 9페이지) ──
+async function fetchAllAppMembers(token) {
+  const all = [];
+  let page = 1, totalPage = 1, guard = 0, unauthorized = false;
+  do {
+    const api = `${API_BASE}/pug/jp/members/search?page=${page}&pageSize=1000`;
+    const res = await fetch(api, { headers: upstreamHeaders({ "X-Auth-Token": token }) });
+    if (res.status === 401) { unauthorized = true; break; }
+    if (!res.ok) throw new Error("앱회원 API 오류 " + res.status);
+    const body = await res.json();
+    const list = (body.result && body.result.members) || [];
+    all.push.apply(all, list);
+    totalPage = (body.page && body.page.totalPage) || page;
+    page++; guard++;
+  } while (page <= totalPage && guard < 20);
+  return { all, unauthorized };
+}
+
+// ── SNS 계정 인증 전 페이지 수집 ──
+async function fetchAllSnsAccounts(token) {
+  const all = [];
+  let page = 1, totalPage = 1, guard = 0, unauthorized = false;
+  do {
+    const api = `${API_BASE}/pug/jp/members/sns-accounts/search?snsType=&authState=&page=${page}&pageSize=1000`;
+    const res = await fetch(api, { headers: upstreamHeaders({ "X-Auth-Token": token }) });
+    if (res.status === 401) { unauthorized = true; break; }
+    if (!res.ok) throw new Error("SNS 인증 API 오류 " + res.status);
+    const body = await res.json();
+    const r = body.result || {};
+    const key = Object.keys(r).find(function (k) { return Array.isArray(r[k]); });
+    const list = (key && r[key]) || [];
+    all.push.apply(all, list);
+    totalPage = (body.page && body.page.totalPage) || page;
+    page++; guard++;
+  } while (page <= totalPage && guard < 10);
+  return { all, unauthorized };
+}
+
+// 개인정보 최소화: 공개 스냅샷에는 이름 마스킹(첫 글자+*)·연락처/주소/ID 미포함
+function maskNm(s) { s = String(s || "").trim(); return s ? s.slice(0, 1) + "*" : ""; }
+function mapAppMember(x) {
+  return {
+    no: x.memberNo,
+    join: dt(x.registerDate),
+    state: MEMSTATE_MAP[x.memberState] || x.memberState || "",
+    inflow: x.registerInflowPath || "",
+    gender: x.genderType || "",
+    age: x.age || 0,
+    name: maskNm(x.memberNm),
+  };
+}
+
 // ── 공유 스냅샷 생성: 캠페인+회원 전량 수집 → KV 저장 ──
 //    크론(3시간)과 /snapshot/refresh(수동)에서 공용으로 사용.
 async function runSnapshot(env, ctx, trigger) {
@@ -154,10 +206,21 @@ async function runSnapshot(env, ctx, trigger) {
   if (rm.unauthorized) throw new Error("인증 실패(401): 회원");
   const campaigns = rc.all.map(mapCampaign);
   const members = rm.all.map(function (a) { return mapMember(a, sm); });
+  // [2026-09-07] 앱(체험단) 회원 + SNS 인증 스냅샷 (약 13 서브요청 추가)
+  let appMembers = [], snsAccounts = [];
+  try {
+    const ra = await fetchAllAppMembers(token);
+    if (!ra.unauthorized) appMembers = ra.all.map(mapAppMember);
+    const rs = await fetchAllSnsAccounts(token);
+    if (!rs.unauthorized) snsAccounts = rs.all.map(function (x) {
+      return { m: x.memberNo, t: x.snsType || "", st: x.authState || "", n: x.accountMetricNum || 0 };
+    });
+  } catch (e) { /* 앱회원 수집 실패는 기존 스냅샷을 막지 않음 */ }
   const now = new Date().toISOString();
-  const meta = { updatedAt: now, trigger: trigger || "cron", campCount: campaigns.length, memberCount: members.length };
+  const meta = { updatedAt: now, trigger: trigger || "cron", campCount: campaigns.length, memberCount: members.length, appMemberCount: appMembers.length, snsCount: snsAccounts.length };
   await env.PT_KV.put("pointail_snap_camp", JSON.stringify({ source: "storelink-apia-v2", fetchedAt: now, count: campaigns.length, campaigns: campaigns }));
   await env.PT_KV.put("pointail_snap_member", JSON.stringify({ source: "storelink-advertiser", fetchedAt: now, count: members.length, members: members }));
+  if (appMembers.length) await env.PT_KV.put("pointail_snap_appmem", JSON.stringify({ fetchedAt: now, count: appMembers.length, members: appMembers, sns: snsAccounts }));
   await env.PT_KV.put("pointail_snap_meta", JSON.stringify(meta));
   return meta;
 }
@@ -320,6 +383,63 @@ export default {
       } catch (e) {
         return json({ ok: false, error: String((e && e.message) || e), missions: out }, 500, cors);
       }
+    }
+
+    // ── 앱(체험단) 회원 스냅샷 + 활성화(지원 이력) 수집 [2026-09-07] ──
+    //   GET /appmembers          → KV 스냅샷 {fetchedAt, count, members:[{no,join,state,inflow,gender,age,name(마스킹)}], sns:[{m,t,st,n}]}
+    //   GET /applies             → 회원별 지원 이력 맵 {no: {c:지원수, f:첫지원일(근사), ts:수집시각}}
+    //   GET /applies/crawl       → 미수집 회원 최대 35명 지원 이력 수집(회원당 상위 API 1회) 후 KV 반영
+    //                              전부 수집됐으면 최근 120일 가입·지원 0건·24h 지난 회원을 재확인
+    if (url.pathname === "/appmembers") {
+      if (!env.PT_KV) return json({ error: "KV 미설정" }, 500, cors);
+      const v = await env.PT_KV.get("pointail_snap_appmem");
+      return new Response(v || '{"count":0,"members":[],"sns":[]}', { status: 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, cors) });
+    }
+    if (url.pathname === "/applies") {
+      if (!env.PT_KV) return json({ error: "KV 미설정" }, 500, cors);
+      const v = await env.PT_KV.get("pointail_applies");
+      return new Response(v || "{}", { status: 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, cors) });
+    }
+    if (url.pathname === "/applies/crawl") {
+      if (!env.PT_KV) return json({ error: "KV 미설정" }, 500, cors);
+      const snapRaw = await env.PT_KV.get("pointail_snap_appmem");
+      if (!snapRaw) return json({ ok: false, error: "앱회원 스냅샷이 아직 없습니다. /snapshot/refresh 먼저 실행" }, 400, cors);
+      let snap; try { snap = JSON.parse(snapRaw); } catch (e) { return json({ ok: false, error: "스냅샷 파싱 실패" }, 500, cors); }
+      let map = {}; try { map = JSON.parse((await env.PT_KV.get("pointail_applies")) || "{}"); } catch (e) {}
+      const BATCH = 35, nowTs = Date.now(), today10 = new Date().toISOString().slice(0, 10);
+      // 최신 가입 순으로 미수집 우선
+      const mems = (snap.members || []).slice().sort(function (a, b) { return String(b.join).localeCompare(String(a.join)); });
+      let targets = mems.filter(function (m) { return map[m.no] === undefined; }).slice(0, BATCH);
+      let mode = "initial";
+      if (!targets.length) {
+        mode = "recheck";
+        const cutJoin = new Date(nowTs - 120 * 86400000).toISOString().slice(0, 10);
+        targets = mems.filter(function (m) {
+          const e = map[m.no];
+          return e && e.c === 0 && String(m.join).slice(0, 10) >= cutJoin && (nowTs - (e.ts || 0)) > 86400000;
+        }).slice(0, BATCH);
+      }
+      if (!targets.length) return json({ ok: true, mode: mode, added: 0, remaining: 0, total: mems.length, collected: Object.keys(map).length }, 200, cors);
+      let tokenC = await getAutoToken(env, ctx, false);
+      let added = 0;
+      for (const m of targets) {
+        let res = await fetch(API_BASE + "/pug/jp/members/" + m.no + "/campaigns-appliers?page=1&pageSize=100", { headers: upstreamHeaders({ "X-Auth-Token": tokenC }) });
+        if (res.status === 401) {
+          tokenC = await getAutoToken(env, ctx, true);
+          res = await fetch(API_BASE + "/pug/jp/members/" + m.no + "/campaigns-appliers?page=1&pageSize=100", { headers: upstreamHeaders({ "X-Auth-Token": tokenC }) });
+        }
+        if (!res.ok) continue;
+        const jj = await res.json().catch(function () { return null; });
+        if (!jj) continue;
+        const arr = (jj.result && jj.result.applier) || [];
+        let first = "";
+        arr.forEach(function (a) { const d = dt(a.modifyDt).slice(0, 10); if (d && (!first || d < first)) first = d; });
+        map[m.no] = { c: (jj.page && jj.page.totalCnt) || arr.length, f: first, ts: nowTs };
+        added++;
+      }
+      await env.PT_KV.put("pointail_applies", JSON.stringify(map));
+      const remaining = mems.filter(function (m) { return map[m.no] === undefined; }).length;
+      return json({ ok: true, mode: mode, added: added, remaining: remaining, total: mems.length, collected: Object.keys(map).length, at: today10 }, 200, cors);
     }
 
     // ── 공유 스냅샷 (KV) : 3시간 자동 동기화 결과를 모두가 공유 ──
