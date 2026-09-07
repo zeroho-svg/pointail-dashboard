@@ -422,20 +422,25 @@ export default {
       if (!targets.length) return json({ ok: true, mode: mode, added: 0, remaining: 0, total: mems.length, collected: Object.keys(map).length }, 200, cors);
       let tokenC = await getAutoToken(env, ctx, false);
       let added = 0;
-      for (const m of targets) {
+      // 회원 1명 처리(401이면 토큰 1회 갱신 후 재시도)
+      async function crawlOne(m) {
         let res = await fetch(API_BASE + "/pug/jp/members/" + m.no + "/campaigns-appliers?page=1&pageSize=100", { headers: upstreamHeaders({ "X-Auth-Token": tokenC }) });
         if (res.status === 401) {
           tokenC = await getAutoToken(env, ctx, true);
           res = await fetch(API_BASE + "/pug/jp/members/" + m.no + "/campaigns-appliers?page=1&pageSize=100", { headers: upstreamHeaders({ "X-Auth-Token": tokenC }) });
         }
-        if (!res.ok) continue;
+        if (!res.ok) return;
         const jj = await res.json().catch(function () { return null; });
-        if (!jj) continue;
+        if (!jj) return;
         const arr = (jj.result && jj.result.applier) || [];
         let first = "";
         arr.forEach(function (a) { const d = dt(a.modifyDt).slice(0, 10); if (d && (!first || d < first)) first = d; });
         map[m.no] = { c: (jj.page && jj.page.totalCnt) || arr.length, f: first, ts: nowTs };
         added++;
+      }
+      // 12명씩 병렬 처리(순차 대비 회당 ~50초 → ~5초; 서브요청 수는 동일)
+      for (let ci = 0; ci < targets.length; ci += 12) {
+        await Promise.all(targets.slice(ci, ci + 12).map(crawlOne));
       }
       await env.PT_KV.put("pointail_applies", JSON.stringify(map));
       const remaining = mems.filter(function (m) { return map[m.no] === undefined; }).length;
