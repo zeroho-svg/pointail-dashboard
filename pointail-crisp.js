@@ -71,7 +71,8 @@
     ensureFont();
     try { new MutationObserver(sched).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
     sweep();
-    setInterval(function () { try { ensureFont(); } catch (e) {} }, 3000);
+    // [v2] 옵저버가 놓치는 늦은 렌더(탭 전환 등) 대비 — 주기 sweep 병행
+    setInterval(function () { try { ensureFont(); sweep(); } catch (e) {} }, 2000);
   }
   if (document.readyState !== 'loading') start();
   else document.addEventListener('DOMContentLoaded', start);
