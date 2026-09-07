@@ -25,6 +25,7 @@
   var SNAP = null;          // /appmembers 응답
   var AP = null;            // /applies 맵
   var loading = false, crawling = false, crawlMsg = '', crawlDone = false;
+  var TTD = {};             // [v6] 추이 차트 툴팁 데이터 (막대 키 → {head,sum,items})
 
   var INFLOW = [
     { id: 'INSTAGRAM',         label: 'Instagram',             color: '#D6567A' },
@@ -103,6 +104,47 @@
         .catch(function () { crawling = false; });
     }
     step();
+  }
+
+  /* ── [v6] 추이 차트 호버 툴팁 ── */
+  function ensureTip() {
+    var t = document.getElementById('ptmem-tt');
+    if (t) return t;
+    t = document.createElement('div');
+    t.id = 'ptmem-tt';
+    t.style.cssText = 'position:fixed;z-index:2147483000;display:none;pointer-events:none;background:rgba(23,27,34,.96);color:#fff;border-radius:10px;padding:10px 13px;font-size:12px;line-height:1.7;box-shadow:0 6px 20px rgba(0,0,0,.28);max-width:240px;white-space:nowrap';
+    document.body.appendChild(t);
+    return t;
+  }
+  function tipHTML(d) {
+    var rows = d.items.map(function (x) {
+      return '<div style="display:flex;align-items:center;gap:7px">' +
+        '<span style="width:9px;height:9px;border-radius:2px;background:' + x.c + ';flex:0 0 auto"></span>' +
+        '<span style="flex:1;padding-right:14px">' + esc(x.l) + '</span><b>' + f(x.v) + '명</b></div>';
+    }).join('');
+    return '<div style="font-weight:700;margin-bottom:5px">' + esc(d.head) + '</div>' + (rows || '<div style="color:#9aa3b2">가입 없음</div>') +
+      '<div style="border-top:1px solid rgba(255,255,255,.22);margin-top:6px;padding-top:5px;font-weight:700">합계 ' + f(d.sum) + '명</div>';
+  }
+  function hookTooltip() {
+    var chart = document.getElementById('ptmem-chart');
+    if (!chart || chart.__ptTT) return;
+    chart.__ptTT = true;
+    var tip = ensureTip();
+    function move(ev) {
+      var col = ev.target && ev.target.closest ? ev.target.closest('[data-ttk]') : null;
+      var d = col && TTD[col.getAttribute('data-ttk')];
+      if (!d) { tip.style.display = 'none'; return; }
+      tip.innerHTML = tipHTML(d);
+      tip.style.display = 'block';
+      var w = tip.offsetWidth, h = tip.offsetHeight;
+      var x = ev.clientX + 14, y = ev.clientY - h / 2;
+      if (x + w > window.innerWidth - 8) x = ev.clientX - w - 14;
+      if (y < 8) y = 8;
+      if (y + h > window.innerHeight - 8) y = window.innerHeight - h - 8;
+      tip.style.left = x + 'px'; tip.style.top = y + 'px';
+    }
+    chart.addEventListener('mousemove', move);
+    chart.addEventListener('mouseleave', function () { tip.style.display = 'none'; });
   }
 
   /* ── 렌더 ── */
@@ -220,13 +262,20 @@
     var maxV = 1;
     keys.forEach(function (k) { var r = src[k] || {}, s = 0; Object.keys(r).forEach(function (c) { s += r[c]; }); maxV = Math.max(maxV, s); });
     var H = 130;
+    TTD = {};   // [v6] 뷰 전환 때마다 재구성
+    var ttHead = function (k) {
+      if (MV.view === 'day') return parseInt(k.slice(5, 7), 10) + '/' + parseInt(k.slice(8, 10), 10);
+      if (MV.view === 'month') return k.replace('-', '.');
+      return k + '년';
+    };
     var bars = keys.map(function (k) {
       var r = src[k] || {}, sum = 0; Object.keys(r).forEach(function (c) { sum += r[c]; });
+      TTD[k] = { head: ttHead(k), sum: sum, items: chOrder.map(function (ch) { return { l: ch.label, c: ch.color, v: r[ch.id] || 0 }; }).filter(function (x) { return x.v > 0; }) };
       var seg = chOrder.map(function (ch) {
         var v = r[ch.id] || 0; if (!v) return '';
         return '<div style="width:100%;height:' + Math.max(1, Math.round(v / maxV * H)) + 'px;background:' + ch.color + '"></div>';
       }).join('');
-      return '<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0" title="' + esc(k) + ' · ' + f(sum) + '명">' +
+      return '<div data-ttk="' + esc(k) + '" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;min-width:0;cursor:default">' +
         '<div style="font-size:9px;color:#8a94a6;line-height:1">' + (sum || '') + '</div>' +
         '<div style="display:flex;flex-direction:column-reverse;justify-content:flex-start;height:' + H + 'px;width:70%;min-width:5px;max-width:26px;border-radius:3px 3px 0 0;overflow:hidden;align-self:center">' + seg + '</div>' +
         '<div style="font-size:9.5px;color:#8a94a6;border-top:1px solid #eef0f3;width:100%;text-align:center;padding-top:2px;white-space:nowrap;overflow:hidden">' + labFn(k) + '</div></div>';
@@ -323,7 +372,7 @@
               '<button onclick="window.PTMEM&&PTMEM.csvTrend()" style="font-size:11.5px;padding:4px 10px;border-radius:8px;background:#fff;border:1px solid #e5e8ee;color:#667085;cursor:pointer">⬇ CSV</button>' +
             '</div></div>' +
           monthPills +
-          '<div style="display:flex;align-items:flex-end;gap:3px;overflow-x:auto">' + bars + '</div>' +
+          '<div id="ptmem-chart" style="display:flex;align-items:flex-end;gap:3px;overflow-x:auto">' + bars + '</div>' +
           '<div style="font-size:10.5px;color:#98a2b3;margin-top:6px">' + (MV.view === 'month' ? '최근 24개월 · ' : '') + '수집: ' + esc(fetchedTxt) + ' (3시간 자동 동기화)</div>' +
         '</div>' +
       '</div>' +
@@ -357,6 +406,8 @@
         '<div style="font-size:10.5px;color:#98a2b3;margin-top:8px">단계: 가입 14일 미만 🌱 신규 / 14~45일 💬 재안내 / 45일 초과 🚨 장기 미지원 · 회원번호로 어드민 회원 정보 관리에서 검색</div>' +
       '</div>' +
       '</div>';
+
+    hookTooltip();   // [v6] 추이 차트 호버 툴팁
 
     /* 미수집분 있으면 자동 수집 시작 — [v4] 서버가 이미 수집 완료(remaining=0)를
        보고한 세션에서는 재시작하지 않는다(KV 반영 지연으로 covered<100%로 보여도
