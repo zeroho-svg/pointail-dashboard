@@ -171,6 +171,38 @@ async function fetchAllSnsAccounts(token) {
   return { all, unauthorized };
 }
 
+// ── [2026-09-15] 퍼그제로(RevUp) 마케팅 신청 전 페이지 수집 (pageSize 1000 → 약 7페이지) ──
+async function fetchAllPzMarketings(token) {
+  const all = [];
+  let page = 1, totalPage = 1, guard = 0, unauthorized = false;
+  do {
+    const api = `${API_BASE}/stl/marketings/search/v2?page=${page}&pageSize=1000&marketingDateSearchType=REQUEST_DATE`;
+    const res = await fetch(api, { headers: upstreamHeaders({ "X-Auth-Token": token }) });
+    if (res.status === 401) { unauthorized = true; break; }
+    if (!res.ok) throw new Error("RevUp API 오류 " + res.status);
+    const body = await res.json();
+    const list = (body.result && body.result.marketings) || [];
+    all.push.apply(all, list);
+    totalPage = (body.page && body.page.totalPage) || page;
+    page++; guard++;
+  } while (page <= totalPage && guard < 15);
+  return { all, unauthorized };
+}
+// 퍼그제로 대시보드 스키마로 경량 매핑 (금액·상태·채널·정산 — 연락처 등 미포함)
+function mapPz(m) {
+  return {
+    no: m.smNo, state: m.mktState || "", biz: m.mktBizType || "",
+    chnnl: m.storeChnnl || "", chnnlType: m.storeChnnlType || "",
+    store: m.storeNm || "", prdct: m.prdctNm || "", corp: m.corporateNm || "",
+    goods: m.totalGoodsAmt || 0, mss: m.totalMssAmt || 0, coupon: m.couponAmt || 0,
+    mkt: m.totalMktAmt || 0, deposit: m.depositAmt || 0, pay: m.totalPaymentAmt || 0,
+    mgr: m.admManagerNo || 0,
+    open: dt(m.openPlanDate || m.openPlanDt || ""), close: dt(m.closeDt || ""),
+    finish: m.cmpgnFinishYn === "Y" || m.cmpgnFinishYn === true,
+    settled: !!m.isSettled, tax: !!m.isTaxBillIssued,
+  };
+}
+
 // 개인정보 최소화: 공개 스냅샷에는 이름 마스킹(첫 글자+*)·연락처/주소/ID 미포함
 function maskNm(s) { s = String(s || "").trim(); return s ? s.slice(0, 1) + "*" : ""; }
 function mapAppMember(x) {
@@ -445,6 +477,52 @@ export default {
       await env.PT_KV.put("pointail_applies", JSON.stringify(map));
       const remaining = mems.filter(function (m) { return map[m.no] === undefined; }).length;
       return json({ ok: true, mode: mode, added: added, remaining: remaining, total: mems.length, collected: Object.keys(map).length, at: today10 }, 200, cors);
+    }
+
+    // ── [2026-09-15] 퍼그제로(RevUp) 매출·정산 스냅샷 ──
+    //   GET      /pz/snapshot  → KV 캐시된 마케팅 신청 전량(경량 매핑) {meta, rows}
+    //   GET|POST /pz/refresh   → /stl/marketings/search/v2 전 페이지(1000×~7p) 수집 → KV 저장
+    //                            (5분 재수집 방지, ?force=1 시 무시)
+    //   GET/PUT  /pz/costs     → 마케팅 비용 수기 입력(KV pugzero_costs)
+    if (url.pathname === "/pz/snapshot") {
+      if (!env.PT_KV) return json({ error: "KV 미설정" }, 500, cors);
+      const v = await env.PT_KV.get("pugzero_snap");
+      return new Response(v || '{"meta":{},"rows":[]}', { status: 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, cors) });
+    }
+    if (url.pathname === "/pz/refresh") {
+      if (!env.PT_KV) return json({ error: "KV 미설정" }, 500, cors);
+      let meta = {}; try { meta = JSON.parse((await env.PT_KV.get("pugzero_snap_meta")) || "{}"); } catch (e) {}
+      if (meta.updatedAt && (Date.now() - Date.parse(meta.updatedAt)) < 5 * 60 * 1000 && url.searchParams.get("force") !== "1") {
+        return json({ ok: false, tooSoon: true, meta: meta }, 200, cors);
+      }
+      try {
+        let token = await getAutoToken(env, ctx, false);
+        let rp = await fetchAllPzMarketings(token);
+        if (rp.unauthorized) { token = await getAutoToken(env, ctx, true); rp = await fetchAllPzMarketings(token); }
+        if (rp.unauthorized) return json({ ok: false, error: "인증 실패(401)" }, 200, cors);
+        const rows = rp.all.map(mapPz);
+        const now = new Date().toISOString();
+        const m2 = { updatedAt: now, count: rows.length };
+        await env.PT_KV.put("pugzero_snap", JSON.stringify({ meta: m2, rows: rows }));
+        await env.PT_KV.put("pugzero_snap_meta", JSON.stringify(m2));
+        return json({ ok: true, meta: m2 }, 200, cors);
+      } catch (e) {
+        return json({ ok: false, error: String(e && e.message || e) }, 200, cors);
+      }
+    }
+    if (url.pathname === "/pz/costs") {
+      if (!env.PT_KV) return json({ error: "KV 미설정" }, 500, cors);
+      if (request.method === "GET") {
+        const v = await env.PT_KV.get("pugzero_costs");
+        return new Response(v || "{}", { status: 200, headers: Object.assign({ "Content-Type": "application/json; charset=utf-8" }, cors) });
+      }
+      if (request.method === "PUT") {
+        const body = await request.text();
+        try { JSON.parse(body || "{}"); } catch (e) { return json({ error: "잘못된 JSON" }, 400, cors); }
+        await env.PT_KV.put("pugzero_costs", body || "{}");
+        return json({ ok: true }, 200, cors);
+      }
+      return json({ error: "허용되지 않은 메서드" }, 405, cors);
     }
 
     // ── 공유 스냅샷 (KV) : 3시간 자동 동기화 결과를 모두가 공유 ──
