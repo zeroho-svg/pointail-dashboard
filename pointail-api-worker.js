@@ -171,35 +171,38 @@ async function fetchAllSnsAccounts(token) {
   return { all, unauthorized };
 }
 
-// ── [2026-09-15] 퍼그제로(RevUp) 마케팅 신청 전 페이지 수집 (pageSize 1000 → 약 7페이지) ──
-async function fetchAllPzMarketings(token) {
+// ── [2026-09-15 v2] 퍼그제로 캠페인 전 페이지 수집 (/pug/kr/campaigns/search, PUG_ZERO만) ──
+//    ⚠️ 처음엔 RevUp(/stl/marketings/search/v2)을 썼으나 그건 파트너스(대행) 신청 데이터로 판명
+//    → 사용자 확인("퍼그제로 캠페인만") 후 campaignServiceType=PUG_ZERO 필터로 교체.
+async function fetchAllPzCampaigns(token) {
   const all = [];
   let page = 1, totalPage = 1, guard = 0, unauthorized = false;
   do {
-    const api = `${API_BASE}/stl/marketings/search/v2?page=${page}&pageSize=1000&marketingDateSearchType=REQUEST_DATE`;
+    const api = `${API_BASE}/pug/kr/campaigns/search?page=${page}&pageSize=1000&campaignDateSearchType=CREATE_DATE`;
     const res = await fetch(api, { headers: upstreamHeaders({ "X-Auth-Token": token }) });
     if (res.status === 401) { unauthorized = true; break; }
-    if (!res.ok) throw new Error("RevUp API 오류 " + res.status);
+    if (!res.ok) throw new Error("퍼그제로 캠페인 API 오류 " + res.status);
     const body = await res.json();
-    const list = (body.result && body.result.marketings) || [];
-    all.push.apply(all, list);
+    const list = (body.result && body.result.campaigns) || [];
+    for (const c of list) if (c.campaignServiceType === "PUG_ZERO") all.push(c);
     totalPage = (body.page && body.page.totalPage) || page;
     page++; guard++;
-  } while (page <= totalPage && guard < 15);
+  } while (page <= totalPage && guard < 30);
   return { all, unauthorized };
 }
-// 퍼그제로 대시보드 스키마로 경량 매핑 (금액·상태·채널·정산 — 연락처 등 미포함)
-function mapPz(m) {
+const PZ_STATE = { REGISTER_WAITING: "등록대기", REGISTER_SUCCESS: "등록완료", RECRUIT: "모집중", ADD_RECRUIT: "추가모집", SELECT_SUCCESS: "선정완료", CAMPAIGN_CLOSE: "캠페인종료", STOP: "일시중지", CAMPAIGN_CANCEL: "캠페인취소", REGISTER_CANCEL: "등록취소" };
+// 퍼그제로 대시보드 스키마 경량 매핑 (연락처류 미포함)
+function mapPz(c) {
   return {
-    no: m.smNo, state: m.mktState || "", biz: m.mktBizType || "",
-    chnnl: m.storeChnnl || "", chnnlType: m.storeChnnlType || "",
-    store: m.storeNm || "", prdct: m.prdctNm || "", corp: m.corporateNm || "",
-    goods: m.totalGoodsAmt || 0, mss: m.totalMssAmt || 0, coupon: m.couponAmt || 0,
-    mkt: m.totalMktAmt || 0, deposit: m.depositAmt || 0, pay: m.totalPaymentAmt || 0,
-    mgr: m.admManagerNo || 0,
-    open: dt(m.openPlanDate || m.openPlanDt || ""), close: dt(m.closeDt || ""),
-    finish: m.cmpgnFinishYn === "Y" || m.cmpgnFinishYn === true,
-    settled: !!m.isSettled, tax: !!m.isTaxBillIssued,
+    no: c.campaignNo, state: PZ_STATE[c.campaignState] || c.campaignState || "",
+    nm: c.campaignNm || "", store: c.storeNm || "", corp: c.corporateNm || "",
+    chnnl: c.storeChnnlNm || "", type: c.campaignType || "",
+    created: dt(c.createDt || ""), rstart: dt(c.recruitBeginDt || ""),
+    pay: c.paymentAmt || 0, point: c.campaignPointAmt || 0,
+    mo: c.totalRecruitNum || 0, ap: c.totalApplyNum || 0, sel: c.totalSelNum || 0,
+    msn: c.totalMsnFinishNum || 0, rev: c.totalPointRevenue || 0,
+    op: c.opManagerNm || "", sales: c.salesManagerNm || "",
+    rounds: c.selRndNum || 0, curRound: c.currentSelRndNum || 0,
   };
 }
 
@@ -497,8 +500,8 @@ export default {
       }
       try {
         let token = await getAutoToken(env, ctx, false);
-        let rp = await fetchAllPzMarketings(token);
-        if (rp.unauthorized) { token = await getAutoToken(env, ctx, true); rp = await fetchAllPzMarketings(token); }
+        let rp = await fetchAllPzCampaigns(token);
+        if (rp.unauthorized) { token = await getAutoToken(env, ctx, true); rp = await fetchAllPzCampaigns(token); }
         if (rp.unauthorized) return json({ ok: false, error: "인증 실패(401)" }, 200, cors);
         const rows = rp.all.map(mapPz);
         const now = new Date().toISOString();

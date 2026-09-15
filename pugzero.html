@@ -40,7 +40,7 @@
   .hrow .nm{width:110px;font-weight:700;color:#3f4754;flex:0 0 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .hrow .trk{flex:1;height:15px;background:#f0f2f6;border-radius:5px;overflow:hidden}
   .hrow .fill{height:100%;border-radius:5px}
-  .hrow .val{width:130px;text-align:right;font-weight:800;flex:0 0 auto;font-size:12px}
+  .hrow .val{width:150px;text-align:right;font-weight:800;flex:0 0 auto;font-size:12px}
   .hrow .pc{color:#8a94a6;font-weight:500;font-size:10.5px}
   table{width:100%;border-collapse:collapse;font-size:12.5px}
   th{background:#f7f8fa;color:#5b6472;font-size:11.5px;padding:8px 10px;text-align:right;border-bottom:1px solid #e5e8ee;white-space:nowrap}
@@ -52,7 +52,7 @@
   .tag.ex{background:#fef3e2;color:#b45309}
   .tag.auto{background:#e7f6ec;color:#0f6e56}
   .mini{display:flex;gap:9px;flex-wrap:wrap}
-  .mini .m{flex:1;min-width:105px;background:#f7f8fa;border-radius:10px;padding:11px 13px}
+  .mini .m{flex:1;min-width:100px;background:#f7f8fa;border-radius:10px;padding:11px 13px}
   .mini .m .l{font-size:11px;color:#6b7484;white-space:nowrap}
   .mini .m .n{font-size:18px;font-weight:800;margin-top:2px}
   .note{font-size:11px;color:#8a94a6;margin-top:10px}
@@ -62,6 +62,8 @@
   #tip{position:fixed;z-index:99999;display:none;pointer-events:none;background:rgba(23,27,34,.96);color:#fff;border-radius:10px;padding:10px 13px;font-size:12px;line-height:1.7;box-shadow:0 6px 20px rgba(0,0,0,.28);white-space:nowrap}
   #loading{text-align:center;padding:80px 20px;color:#8a94a6;font-size:14px}
   .scroll{overflow:auto;max-height:420px}
+  .profit{background:linear-gradient(135deg,#0e9f8a,#1673c9);color:#fff;border:none}
+  .profit .l,.profit .n{color:#fff}
 </style>
 </head>
 <body>
@@ -69,7 +71,7 @@
   <div class="hd">
     <div>
       <h1>🐶 퍼그제로 통합 대시보드 <span style="color:#5b6472;font-weight:600;font-size:15px">— 매출 · 마케팅 비용</span></h1>
-      <div class="sub">데이터 원천: 백오피스 마케팅 신청(RevUp) — Worker 자동 수집 · <span id="syncTxt">동기화 확인 중…</span></div>
+      <div class="sub">데이터: 퍼그제로 캠페인 (백오피스, PUG_ZERO만) — Worker 자동 수집 · <span id="syncTxt">동기화 확인 중…</span></div>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <button class="badge" id="syncBadge" onclick="PZ.refresh()"><span class="dot"></span> <span id="badgeTxt">⚡ 동기화 확인 중</span></button>
@@ -82,7 +84,7 @@
     <div class="grid2">
       <div class="card">
         <div class="tt">📊 월별 매출 추이 <span class="tag auto">자동</span></div>
-        <div class="td">막대 = 매출(총 마케팅금액, 취소 제외) · 마우스를 올리면 상세</div>
+        <div class="td">매출 = 결제금액 × 모집인원 (취소 제외) · 캠페인 생성일 기준 · 마우스를 올리면 상세</div>
         <div class="chart" id="mchart"></div>
       </div>
       <div class="card">
@@ -103,11 +105,11 @@
         </div>
       </div>
       <div class="card">
-        <div class="tt">🧾 정산 · 세금계산서 현황 <span class="tag auto">자동</span></div>
-        <div class="td">선택 연도 캠페인 기준 정산 파이프라인</div>
-        <div class="mini" id="settleMini"></div>
-        <div class="scroll" style="margin-top:12px;max-height:260px"><table id="unsettleTbl"></table></div>
-        <div class="note">종료(CLOSE)됐지만 정산 표시가 없는 캠페인의 광고주별 합계 · 금액 = 마케팅금액</div>
+        <div class="tt">💰 수익 요약 · 진행 현황 <span class="tag auto">자동</span></div>
+        <div class="td">성과 대시보드와 동일 공식 — 수익 = 선정수 × (결제금액−보상포인트), 카드 수수료 3.2%</div>
+        <div class="mini" id="profitMini"></div>
+        <div class="mini" id="stateMini" style="margin-top:10px"></div>
+        <div class="note">진행 현황은 선택 연도 캠페인 상태 기준 · 예상 수익 = 모집수 전원 완료 가정</div>
       </div>
     </div>
     <div class="card" style="margin-bottom:14px">
@@ -116,7 +118,7 @@
       <div class="scroll"><table id="corpTbl"></table></div>
     </div>
     <div style="text-align:center;font-size:11px;color:#8a94a6;padding:6px 0 20px">
-      매출 = 백오피스 「총 마케팅금액」 합계 (취소·진행취소 제외) · 월 귀속 = 오픈 예정일 기준(없으면 마감일) · 3시간마다 자동 동기화
+      퍼그제로(PUG_ZERO) 캠페인만 집계 · 매출 = 결제금액×모집인원 (캠페인취소·등록취소 제외) · 월 귀속 = 캠페인 생성일 · 3시간마다 자동 동기화
     </div>
   </div>
 </div>
@@ -127,16 +129,17 @@
   var WORKER = 'https://pointail-api.zeroho.workers.dev/';
   var ROWS = [], COSTS = {}, META = {};
   var YEAR = String(new Date().getFullYear());
-  var CH_LABEL = { OLIVEYOUNG:'올리브영', NAVER:'네이버', COUPANG:'쿠팡', BSCMALL:'BSC몰', OWNMALL:'자사몰', LOTTEMALL:'롯데ON', HMALL:'H몰', OLIVEYOUNG_OFFLINE:'올리브영 오프라인', JAPAN:'일본', CROWDFUND:'크라우드펀딩' };
-  var CH_COLOR = { OLIVEYOUNG:'#0f6e56', NAVER:'#128a3a', COUPANG:'#c0392b', BSCMALL:'#185fa5', OWNMALL:'#6b46c1', LOTTEMALL:'#b45309', HMALL:'#0e7490', OLIVEYOUNG_OFFLINE:'#3f7d5f', JAPAN:'#c0398d', CROWDFUND:'#6b7280' };
-  var ST_LABEL = { WAITING:'대기', CONFIRM_SUCCESS:'확정', PROGRESS:'진행 중', CANCEL:'취소', PROGRESS_CANCEL:'진행 취소', CLOSE:'종료' };
+  var FEE = 0.032;   // 카드 수수료 3.2% (성과 대시보드와 동일)
+  var CH_COLOR = { '쿠팡':'#c0392b', '네이버':'#128a3a', '올리브영':'#0f6e56', '스마트스토어':'#128a3a', '자사몰':'#6b46c1', '오늘의집':'#0e7490', '무신사':'#1a1f29', '지그재그':'#c0398d', '에이블리':'#d85a30', '11번가':'#b45309', 'G마켓':'#185fa5', '기타':'#8a94a6' };
+  var CANCEL = { '캠페인취소':1, '등록취소':1 };
   function f(n){ return (Math.round(n)||0).toLocaleString('ko-KR'); }
-  function eok(n){ var v=n/1e8; return (v>=10? v.toFixed(1) : v.toFixed(2)).replace(/\.0+$/,'') + '억'; }
+  function eok(n){ if(Math.abs(n)>=1e8){ var v=n/1e8; return (v>=10? v.toFixed(1): v.toFixed(2))+'억'; } return f(n/1e4)+'만'; }
   function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-  function ym(r){ var d=(r.open||'').slice(0,7); if(!/^\d{4}-\d{2}$/.test(d)) d=(r.close||'').slice(0,7); return /^\d{4}-\d{2}$/.test(d)? d : ''; }
-  function isCancel(r){ return r.state==='CANCEL'||r.state==='PROGRESS_CANCEL'; }
+  function ym(r){ var d=(r.created||'').slice(0,7); return /^\d{4}-\d{2}$/.test(d)? d : ''; }
+  function sales(r){ return (r.pay||0) * (r.mo||0); }                       // 매출(광고주 결제)
+  function profit(r){ return r.rev || ((r.sel||0) * Math.max(0,(r.pay||0)-(r.point||0))); }  // 실현 포인트 수익
+  function eProfit(r){ return (r.mo||0) * Math.max(0,(r.pay||0)-(r.point||0)); }             // 예상 수익
 
-  /* ── 데이터 로드 ── */
   function load(cb){
     Promise.all([
       fetch(WORKER+'pz/snapshot?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json();}),
@@ -149,6 +152,7 @@
     });
   }
   function staleMs(){ return META.updatedAt ? (Date.now()-Date.parse(META.updatedAt)) : Infinity; }
+  function isNew(){ return ROWS.length && ROWS[0].created !== undefined; }   // 구(RevUp) 스냅샷 감지
   function refresh(force){
     var b=document.getElementById('badgeTxt'); b.textContent='⏳ 동기화 중…';
     fetch(WORKER+'pz/refresh?force='+(force?'1':'0'),{method:'POST'}).then(function(r){return r.json();})
@@ -156,91 +160,80 @@
       .catch(function(){ b.textContent='⚠️ 동기화 실패'; });
   }
 
-  /* ── 렌더 ── */
   function render(){
+    if(!isNew()){ refresh(true); return; }   // 파트너스(구) 데이터가 남아있으면 강제 재수집
     document.getElementById('loading').style.display='none';
     document.getElementById('app').style.display='';
     var up = META.updatedAt ? META.updatedAt.replace('T',' ').slice(0,16)+' UTC' : '없음';
-    document.getElementById('syncTxt').textContent = '마지막 동기화 '+up+' · '+f(META.count||ROWS.length)+'건';
+    document.getElementById('syncTxt').textContent = '마지막 동기화 '+up+' · 퍼그제로 캠페인 '+f(META.count||ROWS.length)+'건';
     var stale = staleMs() > 3*3600*1000;
     var badge=document.getElementById('syncBadge'); badge.className='badge'+(stale?' stale':'');
     document.getElementById('badgeTxt').textContent = stale? '🔄 오래됨 — 눌러서 동기화' : '⚡ 최신 · '+f(META.count||ROWS.length)+'건';
 
-    // 연도 바
     var years={}; ROWS.forEach(function(r){ var m=ym(r); if(m) years[m.slice(0,4)]=1; });
     var ylist=Object.keys(years).sort();
     if(ylist.indexOf(YEAR)<0) YEAR=ylist[ylist.length-1]||YEAR;
     document.getElementById('yearBar').innerHTML = ylist.map(function(y){
       return '<button class="pill'+(y===YEAR?' on':'')+'" onclick="PZ.year(\''+y+'\')">'+y+'년</button>';
-    }).join('') + '<span style="font-size:12px;color:#8a94a6;margin-left:6px">표시 기준: 오픈 예정일</span>';
+    }).join('') + '<span style="font-size:12px;color:#8a94a6;margin-left:6px">기준: 캠페인 생성일</span>';
 
     var yr = ROWS.filter(function(r){ return ym(r).slice(0,4)===YEAR; });
-    var yrOk = yr.filter(function(r){ return !isCancel(r); });
+    var yrOk = yr.filter(function(r){ return !CANCEL[r.state]; });
     var thisM = new Date().toISOString().slice(0,7);
     var mAgg={}, chAgg={}, corpAgg={};
+    var yTot=0, yProfit=0, yEProfit=0;
     yrOk.forEach(function(r){
-      var m=ym(r); if(!mAgg[m]) mAgg[m]={n:0,mkt:0,goods:0}; mAgg[m].n++; mAgg[m].mkt+=r.mkt; mAgg[m].goods+=r.goods;
-      var ch=r.chnnl||'기타'; if(!chAgg[ch]) chAgg[ch]={n:0,mkt:0}; chAgg[ch].n++; chAgg[ch].mkt+=r.mkt;
-      var c=r.corp||'(미입력)'; if(!corpAgg[c]) corpAgg[c]={n:0,mkt:0}; corpAgg[c].n++; corpAgg[c].mkt+=r.mkt;
+      var s=sales(r), p=profit(r);
+      var m=ym(r); if(!mAgg[m]) mAgg[m]={n:0,sales:0,profit:0,mo:0,sel:0}; mAgg[m].n++; mAgg[m].sales+=s; mAgg[m].profit+=p; mAgg[m].mo+=r.mo; mAgg[m].sel+=r.sel;
+      var ch=r.chnnl||'기타'; if(!chAgg[ch]) chAgg[ch]={n:0,sales:0}; chAgg[ch].n++; chAgg[ch].sales+=s;
+      var c=r.corp||r.store||'(미입력)'; if(!corpAgg[c]) corpAgg[c]={n:0,sales:0}; corpAgg[c].n++; corpAgg[c].sales+=s;
+      yTot+=s; yProfit+=p; yEProfit+=eProfit(r);
     });
-    var yTot=0, yN=yrOk.length; yrOk.forEach(function(r){ yTot+=r.mkt; });
-    var mNow = mAgg[thisM]||{n:0,mkt:0};
+    var mNow = mAgg[thisM]||{n:0,sales:0,profit:0};
     var prevM = (function(){ var d=new Date(); d.setMonth(d.getMonth()-1); return d.toISOString().slice(0,7); })();
-    var mPrev = mAgg[prevM]||{n:0,mkt:0};
+    var mPrev = mAgg[prevM]||{n:0,sales:0};
+    var yFee = yTot*FEE, yFinal = yProfit - yFee;
 
-    // 비용
     var cNow = COSTS[thisM]||{}; var cSum=(+cNow.media||0)+(+cNow.prod||0);
-    var roasNow = cSum>0 ? Math.round(mNow.mkt/cSum*100) : null;
+    var roasNow = cSum>0 ? Math.round(mNow.sales/cSum*100) : null;
 
-    // 정산 (연도 기준)
-    var st={PROGRESS:0,CLOSE:0,CANCEL:0,WAITING:0,CONFIRM_SUCCESS:0,PROGRESS_CANCEL:0};
-    var settled=0, tax=0, unsCnt=0, unsAmt=0, unsByCorp={};
-    yr.forEach(function(r){
-      st[r.state]=(st[r.state]||0)+1;
-      if(r.settled) settled++;
-      if(r.tax) tax++;
-      if(r.state==='CLOSE' && !r.settled){ unsCnt++; unsAmt+=r.mkt; var c=r.corp||'(미입력)'; if(!unsByCorp[c]) unsByCorp[c]={n:0,amt:0}; unsByCorp[c].n++; unsByCorp[c].amt+=r.mkt; }
-    });
+    var st={}; yr.forEach(function(r){ st[r.state]=(st[r.state]||0)+1; });
 
-    // KPI
     document.getElementById('kpi').innerHTML =
-      kpi('📅','이번 달 매출 ('+thisM.slice(5,7).replace(/^0/,'')+'월)', eok(mNow.mkt), f(mNow.n)+'건 · 전월 '+eok(mPrev.mkt)+' ('+f(mPrev.n)+'건)', '#185fa5') +
-      kpi('📈', YEAR+'년 누적 매출', eok(yTot), f(yN)+'건 · 건당 평균 '+f(yN? yTot/yN/1e4 :0)+'만원', '#1a1f29') +
-      kpi('💸','이번 달 마케팅 비용', cSum? eok(cSum) : '<span style="font-size:15px;color:#8a94a6">미입력</span>', cSum? ('비용률 '+(mNow.mkt? (cSum/mNow.mkt*100).toFixed(1):'-')+'% · ROAS '+f(roasNow)+'%') : '아래 표에서 입력하세요', '#b45309') +
-      kpi('🧾','정산 완료', f(settled)+'<small>건</small>', YEAR+'년 '+f(yr.length)+'건 중 '+(yr.length? Math.round(settled/yr.length*100):0)+'% · 계산서 '+f(tax)+'건', '#128a3a') +
-      kpi('⏳','종료 후 미정산', f(unsCnt)+'<small>건</small>', '금액 약 '+eok(unsAmt)+' · 종료 '+f(st.CLOSE)+'건 기준', '#c0392b');
+      kpi('📅','이번 달 매출 ('+thisM.slice(5,7).replace(/^0/,'')+'월)', eok(mNow.sales), f(mNow.n)+'건 · 전월 '+eok(mPrev.sales)+' ('+f(mPrev.n)+'건)', '#185fa5') +
+      kpi('📈', YEAR+'년 누적 매출', eok(yTot), f(yrOk.length)+'건 · 평균 결제 '+f(yrOk.length? yTot/Math.max(1,yrOk.reduce(function(a,r){return a+r.mo;},0)) :0)+'원/명', '#1a1f29') +
+      kpi('💎', YEAR+'년 최종 수익', eok(yFinal), '포인트 수익 '+eok(yProfit)+' − 수수료 '+eok(yFee)+' (3.2%)', '#0f6e56') +
+      kpi('💸','이번 달 마케팅 비용', cSum? eok(cSum) : '<span style="font-size:15px;color:#8a94a6">미입력</span>', cSum? ('비용률 '+(mNow.sales? (cSum/mNow.sales*100).toFixed(1):'-')+'% · ROAS '+f(roasNow)+'%') : '아래 표에서 입력하세요', '#b45309') +
+      kpi('🚀','진행 중', f((st['모집중']||0)+(st['추가모집']||0))+'<small>건</small>', '선정완료 '+f(st['선정완료']||0)+'건 · 종료 '+f(st['캠페인종료']||0)+'건', '#185fa5');
 
-    // 월별 차트
-    var maxMkt=1; for(var i=1;i<=12;i++){ var k=YEAR+'-'+('0'+i).slice(-2); if(mAgg[k]) maxMkt=Math.max(maxMkt,mAgg[k].mkt); }
+    var maxV=1; for(var i=1;i<=12;i++){ var k=YEAR+'-'+('0'+i).slice(-2); if(mAgg[k]) maxV=Math.max(maxV,mAgg[k].sales); }
     var bars='';
     for(var i2=1;i2<=12;i2++){
-      var k2=YEAR+'-'+('0'+i2).slice(-2), v=mAgg[k2]||{n:0,mkt:0,goods:0};
-      var h=Math.max(v.mkt? 3:0, Math.round(v.mkt/maxMkt*145));
+      var k2=YEAR+'-'+('0'+i2).slice(-2), v=mAgg[k2]||{n:0,sales:0};
+      var h=Math.max(v.sales? 3:0, Math.round(v.sales/maxV*145));
       var cur = k2===thisM;
-      bars += '<div class="col" data-tt="'+k2+'"><div class="amt">'+(v.mkt? eok(v.mkt):'')+'</div>'+
+      bars += '<div class="col" data-tt="'+k2+'"><div class="amt">'+(v.sales? eok(v.sales):'')+'</div>'+
         '<div class="bar" style="height:'+h+'px'+(cur?';opacity:.55':'')+'"></div>'+
         '<div class="lbl">'+i2+'월</div><div class="cnt">'+(v.n? f(v.n)+'건'+(cur?' · 진행':'') : '–')+'</div></div>';
     }
     document.getElementById('mchart').innerHTML = bars;
     window.__mAgg = mAgg; window.__COSTS = COSTS;
 
-    // 채널
-    var chArr=Object.keys(chAgg).map(function(k){return {k:k,v:chAgg[k]};}).sort(function(a,b){return b.v.mkt-a.v.mkt;});
-    var chMax=chArr.length? chArr[0].v.mkt:1;
-    document.getElementById('chTd').textContent = YEAR+'년 · 취소 제외 · 캠페인 '+f(yN)+'건';
+    var chArr=Object.keys(chAgg).map(function(k){return {k:k,v:chAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
+    var chMax=chArr.length? chArr[0].v.sales:1;
+    document.getElementById('chTd').textContent = YEAR+'년 · 취소 제외 · 캠페인 '+f(yrOk.length)+'건';
     document.getElementById('chlist').innerHTML = chArr.slice(0,8).map(function(x){
-      var pct=yTot? Math.round(x.v.mkt/yTot*100):0;
-      return '<div class="hrow"><span class="nm">'+esc(CH_LABEL[x.k]||x.k)+'</span>'+
-        '<div class="trk"><div class="fill" style="width:'+Math.max(2,Math.round(x.v.mkt/chMax*100))+'%;background:'+(CH_COLOR[x.k]||'#8a94a6')+'"></div></div>'+
-        '<span class="val">'+eok(x.v.mkt)+' <span class="pc">'+pct+'% · '+f(x.v.n)+'건</span></span></div>';
+      var pct=yTot? Math.round(x.v.sales/yTot*100):0;
+      return '<div class="hrow"><span class="nm">'+esc(x.k)+'</span>'+
+        '<div class="trk"><div class="fill" style="width:'+Math.max(2,Math.round(x.v.sales/chMax*100))+'%;background:'+(CH_COLOR[x.k]||'#8a94a6')+'"></div></div>'+
+        '<span class="val">'+eok(x.v.sales)+' <span class="pc">'+pct+'% · '+f(x.v.n)+'건</span></span></div>';
     }).join('');
     document.getElementById('chNote').textContent = chArr.length>8? '외 '+(chArr.length-8)+'개 채널':'';
 
-    // 비용 표 (해당 연도 12개월, 최신 월 위)
     var crows='<tr><th>월</th><th>매출</th><th>매체비(원)</th><th>제작·기타(원)</th><th>합계</th><th>비용률</th><th>ROAS</th></tr>';
     for(var i3=12;i3>=1;i3--){
       var k3=YEAR+'-'+('0'+i3).slice(-2);
-      var mv=(mAgg[k3]||{mkt:0}).mkt, cv=COSTS[k3]||{};
+      var mv=(mAgg[k3]||{sales:0}).sales, cv=COSTS[k3]||{};
       var media=+cv.media||0, prod=+cv.prod||0, tot=media+prod;
       if(!mv && !tot && k3>thisM) continue;
       crows+='<tr><td><b>'+k3+'</b></td><td>'+(mv?eok(mv):'<span class="mut">–</span>')+'</td>'+
@@ -252,39 +245,36 @@
     }
     document.getElementById('costTbl').innerHTML = crows;
 
-    // 정산 미니 + 미정산 표
-    document.getElementById('settleMini').innerHTML =
-      mini('진행 중', f(st.PROGRESS+st.WAITING+st.CONFIRM_SUCCESS)+'건','#1a1f29') + mini('종료', f(st.CLOSE)+'건','#1a1f29') +
-      mini('정산 완료', f(settled)+'건','#128a3a') + mini('미정산', f(unsCnt)+'건','#c0392b') +
-      mini('계산서 발행', f(tax)+'건','#1a1f29') + mini('취소', f(st.CANCEL+st.PROGRESS_CANCEL)+'건','#8a94a6');
-    var ua=Object.keys(unsByCorp).map(function(k){return {k:k,v:unsByCorp[k]};}).sort(function(a,b){return b.v.amt-a.v.amt;});
-    document.getElementById('unsettleTbl').innerHTML = '<tr><th>광고주(법인)</th><th>미정산 건수</th><th>금액</th></tr>' +
-      (ua.slice(0,10).map(function(x){ return '<tr><td>'+esc(x.k)+'</td><td>'+f(x.v.n)+'건</td><td class="neg">'+f(x.v.amt/1e4)+'만원</td></tr>'; }).join('') || '<tr><td colspan="3" style="text-align:center;color:#0f6e56">✅ 미정산 없음</td></tr>');
+    document.getElementById('profitMini').innerHTML =
+      mini('실현 포인트 수익', eok(yProfit),'#0f6e56') + mini('예상 수익(전원 완료)', eok(yEProfit),'#185fa5') +
+      mini('카드 수수료 3.2%', '-'+eok(yFee),'#c0392b') + '<div class="m profit"><div class="l">최종 수익 ('+YEAR+')</div><div class="n">'+eok(yFinal)+'</div></div>';
+    document.getElementById('stateMini').innerHTML =
+      mini('모집중', f((st['모집중']||0)+(st['추가모집']||0))+'건','#185fa5') + mini('선정완료', f(st['선정완료']||0)+'건','#0f6e56') +
+      mini('종료', f(st['캠페인종료']||0)+'건','#1a1f29') + mini('등록대기·완료', f((st['등록대기']||0)+(st['등록완료']||0))+'건','#6b7484') +
+      mini('취소', f((st['캠페인취소']||0)+(st['등록취소']||0))+'건','#8a94a6');
 
-    // 광고주 TOP
-    var ca=Object.keys(corpAgg).map(function(k){return {k:k,v:corpAgg[k]};}).sort(function(a,b){return b.v.mkt-a.v.mkt;});
+    var ca=Object.keys(corpAgg).map(function(k){return {k:k,v:corpAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
     window.__corpAll = ca;
-    document.getElementById('corpTbl').innerHTML = '<tr><th>#</th><th>광고주(법인)</th><th>캠페인</th><th>매출</th><th>비중</th></tr>' +
-      ca.slice(0,30).map(function(x,idx){ return '<tr><td class="mut">'+(idx+1)+'</td><td><b>'+esc(x.k)+'</b></td><td>'+f(x.v.n)+'건</td><td><b>'+f(x.v.mkt/1e4)+'만원</b></td><td class="mut">'+(yTot? (x.v.mkt/yTot*100).toFixed(1):0)+'%</td></tr>'; }).join('');
+    document.getElementById('corpTbl').innerHTML = '<tr><th>#</th><th>광고주</th><th>캠페인</th><th>매출</th><th>비중</th></tr>' +
+      ca.slice(0,30).map(function(x,idx){ return '<tr><td class="mut">'+(idx+1)+'</td><td><b>'+esc(x.k)+'</b></td><td>'+f(x.v.n)+'건</td><td><b>'+f(x.v.sales/1e4)+'만원</b></td><td class="mut">'+(yTot? (x.v.sales/yTot*100).toFixed(1):0)+'%</td></tr>'; }).join('');
 
     hookTip(mAgg);
   }
   function kpi(ic,lb,v,s,color){ return '<div class="card k"><div class="lb">'+ic+' '+lb+'</div><div class="v" style="color:'+color+'">'+v+'</div><div class="s">'+s+'</div></div>'; }
   function mini(l,n,c){ return '<div class="m"><div class="l">'+l+'</div><div class="n" style="color:'+c+'">'+n+'</div></div>'; }
 
-  /* ── 차트 툴팁 ── */
   function hookTip(mAgg){
     var chart=document.getElementById('mchart'), tip=document.getElementById('tip');
-    if(chart.__tt) { chart.__agg=mAgg; return; }
+    if(chart.__tt){ chart.__agg=mAgg; return; }
     chart.__tt=true; chart.__agg=mAgg;
     chart.addEventListener('mousemove', function(ev){
       var col=ev.target && ev.target.closest? ev.target.closest('[data-tt]'):null;
       var k=col && col.getAttribute('data-tt'), v=k && chart.__agg[k];
       if(!k){ tip.style.display='none'; return; }
-      v=v||{n:0,mkt:0,goods:0};
+      v=v||{n:0,sales:0,profit:0,mo:0,sel:0};
       var c=(window.__COSTS||{})[k]||{}; var ct=(+c.media||0)+(+c.prod||0);
-      tip.innerHTML='<b>'+k.replace('-','.')+'</b><br>매출 <b>'+f(v.mkt/1e4)+'만원</b> · '+f(v.n)+'건<br>상품금액 '+f(v.goods/1e4)+'만원'+
-        (ct? '<br>마케팅비 '+f(ct/1e4)+'만원 · ROAS <b>'+f(v.mkt/ct*100)+'%</b>':'');
+      tip.innerHTML='<b>'+k.replace('-','.')+'</b><br>매출 <b>'+f(v.sales/1e4)+'만원</b> · '+f(v.n)+'건<br>포인트 수익 '+f(v.profit/1e4)+'만원<br>모집 '+f(v.mo)+'명 · 선정 '+f(v.sel)+'명'+
+        (ct? '<br>마케팅비 '+f(ct/1e4)+'만원 · ROAS <b>'+f(v.sales/ct*100)+'%</b>':'');
       tip.style.display='block';
       var w=tip.offsetWidth,h=tip.offsetHeight,x=ev.clientX+14,y=ev.clientY-h/2;
       if(x+w>innerWidth-8) x=ev.clientX-w-14; if(y<8)y=8; if(y+h>innerHeight-8)y=innerHeight-h-8;
@@ -293,7 +283,6 @@
     chart.addEventListener('mouseleave', function(){ tip.style.display='none'; });
   }
 
-  /* ── 비용 저장 ── */
   function saveCosts(){
     document.querySelectorAll('#costTbl input.ci').forEach(function(el){
       var m=el.getAttribute('data-m'), fd=el.getAttribute('data-f');
@@ -307,7 +296,7 @@
       .catch(function(){ msg.textContent='⚠️ 저장 실패 — 네트워크 확인'; });
   }
   function csvCorp(){
-    var rows=(window.__corpAll||[]).map(function(x,i){ return '"'+(i+1)+'","'+String(x.k).replace(/"/g,'""')+'",'+x.v.n+','+x.v.mkt; });
+    var rows=(window.__corpAll||[]).map(function(x,i){ return '"'+(i+1)+'","'+String(x.k).replace(/"/g,'""')+'",'+x.v.n+','+x.v.sales; });
     var blob=new Blob(['﻿순위,광고주,캠페인수,매출(원)\n'+rows.join('\n')],{type:'text/csv;charset=utf-8'});
     var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='퍼그제로_광고주별매출_'+YEAR+'.csv'; a.click(); URL.revokeObjectURL(a.href);
   }
@@ -316,9 +305,9 @@
     year: function(y){ YEAR=y; render(); } };
 
   load(function(){
-    if(!ROWS.length || staleMs() > 3*3600*1000) refresh(!ROWS.length);
+    if(!ROWS.length || !isNew() || staleMs() > 3*3600*1000) refresh(true);
     else render();
-    if(ROWS.length) render();
+    if(ROWS.length && isNew()) render();
   });
 })();
 </script>
