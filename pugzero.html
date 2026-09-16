@@ -246,7 +246,7 @@
     if(u.email_verified===false){ setStatus('이메일 인증이 완료되지 않은 계정입니다.', true); return; }
     /* 🔐 Worker 세션 토큰 발급 (API 인증용) */
     setStatus('서버 인증 중...');
-    fetch(WORKER_A+'auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:resp.credential})})
+    fetch(WORKER_A+'auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:resp.credential, dash:'pz'})})
       .then(function(r){ return r.json().catch(function(){ return {}; }); })
       .then(function(j){ showApp(save(u, j && j.token || '')); })
       .catch(function(){ showApp(save(u, '')); });
@@ -902,7 +902,7 @@
     document.getElementById('tab-'+t).classList.add('on');
     if(t==='admin'){
       var el=document.getElementById('tab-admin');
-      if(!el.__mounted && window.PTADMIN){ el.__mounted=true; window.PTADMIN.mount(el, { wfetch: wfetch }); }
+      if(!el.__mounted && window.PTADMIN){ el.__mounted=true; window.PTADMIN.mount(el, { wfetch: wfetch, dash: 'pz' }); }
       return;
     }
     render();
@@ -923,6 +923,6 @@
   };
 })();
 </script>
-<script src="pointail-adminpanel.js?v=1" defer></script>
+<script src="pointail-adminpanel.js?v=2" defer></script>
 </body>
 </html>

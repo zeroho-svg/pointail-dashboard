@@ -278,29 +278,38 @@ async function authSign(payload, env) {
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   return b64u(new Uint8Array(sig));
 }
-async function authIssue(email, role, env) {
-  const payload = b64u(new TextEncoder().encode(JSON.stringify({ e: email, r: role || "MEMBER", x: Date.now() + AUTH_HOURS * 3600 * 1000 })));
+async function authIssue(email, role, dash, env) {
+  const payload = b64u(new TextEncoder().encode(JSON.stringify({ e: email, r: role || "MEMBER", d: dash || "pt", x: Date.now() + AUTH_HOURS * 3600 * 1000 })));
   return payload + "." + (await authSign(payload, env));
 }
 // ── 👥 사용자 스토어 · 역할 · 사용 로그 ──
 const ROLE_LV = { OWNER: 4, ADMIN: 3, MEMBER: 2, VIEWER: 1 };
 const DEFAULT_OWNER = "zeroho@storelink.io";
 function roleLv(r) { return ROLE_LV[r] || 0; }
-async function getUsersDoc(env) {
+function dashKey(dash) { return dash === "pz" ? "auth_users_pz" : "auth_users_pt"; }
+async function getUsersDoc(env, dash) {
   let d = null;
-  try { d = JSON.parse((await env.PT_KV.get("auth_users")) || "null"); } catch (e) {}
+  try { d = JSON.parse((await env.PT_KV.get(dashKey(dash))) || "null"); } catch (e) {}
+  if (!d || typeof d !== "object") {
+    // 최초 분리 시: 구 공용 저장소(auth_users)에서 시드 — 잠금 방지 (필요 없는 사용자는 관리 탭에서 비활성)
+    try {
+      const legacy = JSON.parse((await env.PT_KV.get("auth_users")) || "null");
+      if (legacy && legacy.users) d = { policy: legacy.policy || "domain", users: legacy.users, seededFromLegacy: true };
+    } catch (e) {}
+  }
   if (!d || typeof d !== "object") d = { policy: "domain", users: {} };
   if (!d.users) d.users = {};
   if (!d.policy) d.policy = "domain";
-  if (!d.users[DEFAULT_OWNER]) d.users[DEFAULT_OWNER] = { name: "박영호", role: "OWNER", active: true, dash: "all", createdAt: Date.now() };
+  if (!d.users[DEFAULT_OWNER]) d.users[DEFAULT_OWNER] = { name: "박영호", role: "OWNER", active: true, createdAt: Date.now() };
   d.users[DEFAULT_OWNER].role = "OWNER"; d.users[DEFAULT_OWNER].active = true;   // 기본 OWNER 잠금 해제 방지
   return d;
 }
-async function logEvent(env, email, a, d) {
+function putUsersDoc(env, dash, doc) { return env.PT_KV.put(dashKey(dash), JSON.stringify(doc)); }
+async function logEvent(env, email, a, d, dash) {
   try {
     let arr = [];
     try { arr = JSON.parse((await env.PT_KV.get("auth_log")) || "[]"); } catch (e) {}
-    arr.unshift({ t: Date.now(), e: email, a: a, d: String(d || "").slice(0, 120) });
+    arr.unshift({ t: Date.now(), e: email, a: a, d: String(d || "").slice(0, 120), dh: dash || "" });
     if (arr.length > 400) arr = arr.slice(0, 400);
     await env.PT_KV.put("auth_log", JSON.stringify(arr));
   } catch (e) {}
@@ -359,8 +368,8 @@ export default {
     //  서명 키 = AUTH_SECRET 시크릿 (없으면 ADMIN_PW로 폴백)
     if (url.pathname === "/auth/login") {
       if (request.method !== "POST") return json({ error: "허용되지 않은 메서드" }, 405, cors);
-      let cred = "";
-      try { cred = ((await request.json()) || {}).credential || ""; } catch (e) {}
+      let cred = "", loginDash = "pt";
+      try { const lb = (await request.json()) || {}; cred = lb.credential || ""; if (lb.dash === "pz") loginDash = "pz"; } catch (e) {}
       if (!cred) return json({ error: "credential 누락" }, 400, cors);
       try {
         const r = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(cred));
@@ -369,30 +378,35 @@ export default {
         if (info.aud !== AUTH_CLIENT_ID) return json({ error: "잘못된 클라이언트" }, 401, cors);
         if (info.email_verified !== "true" && info.email_verified !== true) return json({ error: "이메일 미인증 계정" }, 401, cors);
         if (!info.email || !String(info.email).endsWith("@" + AUTH_DOMAIN)) return json({ error: "@" + AUTH_DOMAIN + " 계정만 허용됩니다" }, 403, cors);
-        // ── 사용자 스토어 확인 (초대 정책·활성 여부·역할)
+        // ── 대시보드별 사용자 스토어 확인 (초대 정책·활성 여부·역할)
         const email = String(info.email).toLowerCase();
-        const doc = await getUsersDoc(env);
+        const doc = await getUsersDoc(env, loginDash);
         let u = doc.users[email];
-        if (doc.policy === "invite" && !u) return json({ error: "초대되지 않은 계정입니다. 관리자에게 초대를 요청하세요." }, 403, cors);
+        if (doc.policy === "invite" && !u) return json({ error: "이 대시보드에 초대되지 않은 계정입니다. 관리자에게 초대를 요청하세요." }, 403, cors);
         if (u && u.active === false) return json({ error: "비활성 처리된 계정입니다. 관리자에게 문의하세요." }, 403, cors);
-        if (!u) { u = { name: info.name || "", role: "MEMBER", active: true, dash: "all", auto: true, createdAt: Date.now() }; doc.users[email] = u; }
+        if (!u) { u = { name: info.name || "", role: "MEMBER", active: true, auto: true, createdAt: Date.now() }; doc.users[email] = u; }
         if (!u.name && info.name) u.name = info.name;
         u.lastLogin = Date.now();
-        ctx.waitUntil(env.PT_KV.put("auth_users", JSON.stringify(doc)));
-        ctx.waitUntil(logEvent(env, email, "login", ((request.headers.get("user-agent") || "").match(/Chrome|Safari|Edg|Firefox/) || [""])[0]));
-        const token = await authIssue(email, u.role, env);
-        return json({ ok: true, token: token, email: email, role: u.role, expiresIn: AUTH_HOURS * 3600 }, 200, cors);
+        ctx.waitUntil(putUsersDoc(env, loginDash, doc));
+        ctx.waitUntil(logEvent(env, email, "login", ((request.headers.get("user-agent") || "").match(/Chrome|Safari|Edg|Firefox/) || [""])[0], loginDash));
+        const token = await authIssue(email, u.role, loginDash, env);
+        return json({ ok: true, token: token, email: email, role: u.role, dash: loginDash, expiresIn: AUTH_HOURS * 3600 }, 200, cors);
       } catch (e) {
         return json({ error: "인증 처리 오류: " + e.message }, 500, cors);
       }
     }
-    let ME = null, MYROLE = "MEMBER", MYLV = 0;
+    let ME = null, MYROLE = "MEMBER", MYLV = 0, MYDASH = "pt";
     {
       const authz = request.headers.get("Authorization") || "";
       const tok = authz.indexOf("Bearer ") === 0 ? authz.slice(7) : (url.searchParams.get("atk") || "");
       const who = await authVerify(tok, env);
       if (!who) return json({ error: "unauthorized", hint: "@storelink.io 로그인 후 이용하세요" }, 401, cors);
-      const doc = await getUsersDoc(env);
+      if (!who.d) return json({ error: "unauthorized", hint: "구버전 세션입니다 — 다시 로그인해주세요" }, 401, cors);
+      MYDASH = who.d === "pz" ? "pz" : "pt";
+      // 요청 대상 대시보드 판정: /pz/* = 퍼그제로, 그 외 = 포인테일 (관리 API는 자기 대시보드)
+      const reqDash = url.pathname.indexOf("/pz/") === 0 ? "pz" : (url.pathname.indexOf("/admin/") === 0 ? MYDASH : "pt");
+      if (reqDash !== MYDASH) return json({ error: "forbidden", hint: (reqDash === "pz" ? "퍼그제로" : "포인테일") + " 대시보드 로그인이 필요합니다 (사용자 관리 분리)" }, 403, cors);
+      const doc = await getUsersDoc(env, MYDASH);
       const u = doc.users[String(who.e).toLowerCase()];
       if (!u || u.active === false) return json({ error: "unauthorized", hint: "계정이 비활성 상태입니다" }, 401, cors);
       ME = String(who.e).toLowerCase(); MYROLE = u.role || who.r || "MEMBER"; MYLV = roleLv(MYROLE);
@@ -410,22 +424,22 @@ export default {
           const remain = 30 * 60 * 1000 - (Date.now() - last);
           if (remain > 0) return json({ error: "cooldown", hint: "강제 동기화 쿨다운 — " + Math.ceil(remain / 60000) + "분 후 다시 시도하세요", remainMin: Math.ceil(remain / 60000) }, 429, cors);
           ctx.waitUntil(env.PT_KV.put(ck, String(Date.now())));
-          ctx.waitUntil(logEvent(env, ME, "sync", p));
+          ctx.waitUntil(logEvent(env, ME, "sync", p, MYDASH));
         }
       }
-      if (m === "PUT" && p.indexOf("/admin/") !== 0) ctx.waitUntil(logEvent(env, ME, "write", p));
+      if (m === "PUT" && p.indexOf("/admin/") !== 0) ctx.waitUntil(logEvent(env, ME, "write", p, MYDASH));
       ctx.waitUntil(trackUsage(env, ME, p, m));
     }
 
     // ── 🛠️ 관리자 API ──
     if (url.pathname === "/admin/users") {
-      const doc = await getUsersDoc(env);
+      const doc = await getUsersDoc(env, MYDASH);
       if (request.method === "GET") {
         const list = Object.keys(doc.users).map(function (em) {
           const u = doc.users[em];
           return { email: em, name: u.name || "", role: u.role, active: u.active !== false, dash: u.dash || "all", lastLogin: u.lastLogin || null, createdAt: u.createdAt || null, invitedBy: u.invitedBy || (u.auto ? "(자동)" : "") };
         });
-        return json({ ok: true, policy: doc.policy || "domain", users: list, me: ME, myRole: MYROLE }, 200, cors);
+        return json({ ok: true, policy: doc.policy || "domain", users: list, me: ME, myRole: MYROLE, dash: MYDASH }, 200, cors);
       }
       if (request.method === "PUT") {
         let b = {}; try { b = await request.json(); } catch (e) {}
@@ -437,8 +451,8 @@ export default {
         if (b.action === "invite") {
           if (target) return json({ error: "이미 등록된 사용자입니다" }, 400, cors);
           if (["ADMIN", "MEMBER", "VIEWER"].indexOf(b.role) < 0) b.role = "MEMBER";
-          doc.users[em] = { name: String(b.name || "").slice(0, 40), role: b.role, active: true, dash: b.dash || "all", invitedBy: ME, createdAt: Date.now() };
-          ctx.waitUntil(logEvent(env, ME, "admin", "초대: " + em + " (" + b.role + ")"));
+          doc.users[em] = { name: String(b.name || "").slice(0, 40), role: b.role, active: true, invitedBy: ME, createdAt: Date.now() };
+          ctx.waitUntil(logEvent(env, ME, "admin", "초대: " + em + " (" + b.role + ")", MYDASH));
         } else if (b.action === "update") {
           if (!target) return json({ error: "없는 사용자입니다" }, 404, cors);
           if (em === ME && b.active === false) return json({ error: "자기 자신은 비활성할 수 없습니다" }, 400, cors);
@@ -450,14 +464,14 @@ export default {
           if (typeof b.active === "boolean") target.active = b.active;
           if (b.dash) target.dash = b.dash;
           if (b.name) target.name = String(b.name).slice(0, 40);
-          ctx.waitUntil(logEvent(env, ME, "admin", "변경: " + em + " → " + (b.role || "") + (typeof b.active === "boolean" ? (b.active ? " 활성" : " 비활성") : "")));
+          ctx.waitUntil(logEvent(env, ME, "admin", "변경: " + em + " → " + (b.role || "") + (typeof b.active === "boolean" ? (b.active ? " 활성" : " 비활성") : ""), MYDASH));
         } else if (b.action === "remove") {
           if (!target) return json({ error: "없는 사용자입니다" }, 404, cors);
           if (target.lastLogin) return json({ error: "로그인 이력이 있는 사용자는 삭제 대신 비활성 처리하세요" }, 400, cors);
           delete doc.users[em];
-          ctx.waitUntil(logEvent(env, ME, "admin", "초대 삭제: " + em));
+          ctx.waitUntil(logEvent(env, ME, "admin", "초대 삭제: " + em, MYDASH));
         } else return json({ error: "action은 invite/update/remove" }, 400, cors);
-        await env.PT_KV.put("auth_users", JSON.stringify(doc));
+        await putUsersDoc(env, MYDASH, doc);
         return json({ ok: true }, 200, cors);
       }
       return json({ error: "허용되지 않은 메서드" }, 405, cors);
@@ -466,15 +480,16 @@ export default {
       if (request.method !== "PUT") return json({ error: "허용되지 않은 메서드" }, 405, cors);
       let b = {}; try { b = await request.json(); } catch (e) {}
       if (b.policy !== "domain" && b.policy !== "invite") return json({ error: "policy는 domain/invite" }, 400, cors);
-      const doc = await getUsersDoc(env);
+      const doc = await getUsersDoc(env, MYDASH);
       doc.policy = b.policy;
-      await env.PT_KV.put("auth_users", JSON.stringify(doc));
-      ctx.waitUntil(logEvent(env, ME, "admin", "접근 정책: " + (b.policy === "invite" ? "초대된 사용자만" : "@storelink.io 전원")));
+      await putUsersDoc(env, MYDASH, doc);
+      ctx.waitUntil(logEvent(env, ME, "admin", "접근 정책: " + (b.policy === "invite" ? "초대된 사용자만" : "@storelink.io 전원"), MYDASH));
       return json({ ok: true, policy: doc.policy }, 200, cors);
     }
     if (url.pathname === "/admin/logs") {
       let arr = []; try { arr = JSON.parse((await env.PT_KV.get("auth_log")) || "[]"); } catch (e) {}
-      return json({ ok: true, logs: arr }, 200, cors);
+      arr = arr.filter(function (l) { return !l.dh || l.dh === MYDASH; });
+      return json({ ok: true, logs: arr, dash: MYDASH }, 200, cors);
     }
     if (url.pathname === "/admin/stats") {
       const days = Math.min(31, Math.max(1, parseInt(url.searchParams.get("days") || "30", 10) || 30));
@@ -485,7 +500,16 @@ export default {
         reads.push(env.PT_KV.get("usage_" + d).then(function (v) { if (v) { try { out[d] = JSON.parse(v); } catch (e) {} } }));
       }
       await Promise.all(reads);
-      return json({ ok: true, days: out }, 200, cors);
+      Object.keys(out).forEach(function (day) {
+        Object.keys(out[day]).forEach(function (em) {
+          const src = out[day][em], kept = {};
+          if (src[MYDASH]) kept[MYDASH] = src[MYDASH];
+          if (src.adm) kept.adm = src.adm;
+          if (Object.keys(kept).length) out[day][em] = kept; else delete out[day][em];
+        });
+        if (!Object.keys(out[day]).length) delete out[day];
+      });
+      return json({ ok: true, days: out, dash: MYDASH }, 200, cors);
     }
     // ═════════════════════════════════════════════════════════
 

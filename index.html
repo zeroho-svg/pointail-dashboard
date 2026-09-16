@@ -6737,7 +6737,7 @@ window.__pointailInitApp = function() {
     setStatus('서버 인증 중...');
     fetch(PT_WORKER_ORIGIN + '/auth/login', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credential: response.credential })
+      body: JSON.stringify({ credential: response.credential, dash: 'pt' })
     })
       .then(function(r){ return r.json().catch(function(){ return {}; }); })
       .then(function(j){

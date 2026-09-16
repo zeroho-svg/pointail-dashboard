@@ -68,6 +68,8 @@
   function mount(el, opts) {
     css();
     var WF = opts && opts.wfetch ? opts.wfetch : function (p, o) { return fetch(WORKER + p, o); };
+    var DASH = (opts && opts.dash) === 'pz' ? 'pz' : 'pt';
+    var DASH_NM = DASH === 'pz' ? '🐶 퍼그제로' : '🐕 포인테일';
     var S = { tab: 'users', doc: null, logs: null, stats: null, msg: '' };
 
     function api(p, o) { return WF(p, o).then(function (r) { return r.json().then(function (j) { if (!r.ok && j && j.error) throw new Error(j.error); return j; }); }); }
@@ -93,7 +95,7 @@
         '<div><label>이름</label><input type="text" id="ptaInvName" placeholder="홍길동" style="width:100px"></div>' +
         '<div><label>역할</label><select id="ptaInvRole"><option>MEMBER</option><option>VIEWER</option><option>ADMIN</option></select></div>' +
         '<button class="pta-btn" data-act="invite">＋ 초대 (사전 등록)</button>' +
-        '<span class="pta-mut" style="font-size:11px;align-self:center">초대 즉시 로그인 가능 · 별도 메일 없음</span></div>';
+        '<span class="pta-mut" style="font-size:11px;align-self:center">' + DASH_NM + ' 대시보드에 초대 · 즉시 로그인 가능</span></div>';
       h += '<table><tr><th>이름</th><th>이메일</th><th>역할</th><th>상태</th><th>최근 로그인</th><th>동작</th></tr>';
       users.forEach(function (u) {
         var isMe = u.email === d.me, isOwner = u.role === 'OWNER';
@@ -147,10 +149,10 @@
       var h = '<div class="pta-card" style="margin-bottom:14px"><h4>👤 사용자별 사용량 (최근 30일)</h4><div class="pta-td">접속일수 = API를 호출한 날 수 · 주 대시보드 = 호출 비중</div>';
       if (!arr.length) h += '<div class="pta-mut">아직 수집된 사용 데이터가 없습니다 — 보안 배포 시점부터 쌓입니다.</div>';
       arr.slice(0, 20).forEach(function (x) {
-        var dash = x.v.pt + x.v.pz === 0 ? '' : (x.v.pt >= x.v.pz ? '🐕 포인테일' : '🐶 퍼그제로');
+        var dash = '';
         h += '<div class="pta-hrow"><span class="nm" title="' + esc(x.em) + '">' + esc(nameOf[x.em] || x.em) + '</span>' +
           '<div class="pta-trk"><div class="pta-fill" style="width:' + Math.max(3, Math.round(x.v.days / maxD * 100)) + '%"></div></div>' +
-          '<span class="pta-val">' + x.v.days + '일 <span class="pta-mut" style="font-weight:500">· 조회 ' + f(x.v.r) + ' · 쓰기 ' + f(x.v.w) + (dash ? ' · ' + dash : '') + '</span></span></div>';
+          '<span class="pta-val">' + x.v.days + '일 <span class="pta-mut" style="font-weight:500">· 조회 ' + f(x.v.r) + ' · 쓰기 ' + f(x.v.w) + '' + '</span></span></div>';
       });
       h += '</div>';
       var idle = (S.doc.users || []).filter(function (u) { return u.active && !per[u.email]; });
@@ -187,7 +189,7 @@
         (S.msg ? '<span class="pta-msg" style="color:' + (S.msgErr ? '#c0392b' : '#12805c') + '">' + esc(S.msg) + '</span>' : '') +
         '</div>' +
         '<div class="pta-card">' + (S.tab === 'users' ? usersHTML() : S.tab === 'stats' ? statsHTML() : logsHTML()) + '</div>' +
-        '<div class="pta-td">포인테일·퍼그제로 공용 — 여기서 바꾸면 두 대시보드 모두 적용 · 모든 권한은 서버(Worker)에서 강제됩니다</div></div>';
+        '<div class="pta-td">' + DASH_NM + ' <b>전용</b> — 사용자·역할·정책이 대시보드별로 분리되어 있습니다 (다른 대시보드에는 영향 없음) · 모든 권한은 서버(Worker)에서 강제</div></div>';
     }
 
     el.addEventListener('click', function (e) {
@@ -257,7 +259,7 @@
         document.querySelectorAll('#main-tabs .tab, #main-tabs .subtab').forEach(function (x) { x.classList.remove('active'); });
         var p2 = document.getElementById('tab-admusr'); if (p2) p2.classList.add('active');
         b.classList.add('active');
-        if (!b.__mounted) { b.__mounted = true; mount(document.getElementById('tab-admusr'), {}); }
+        if (!b.__mounted) { b.__mounted = true; mount(document.getElementById('tab-admusr'), { dash: 'pt' }); }
       });
     }
     var row = document.getElementById('ptnavrow-admin');
