@@ -274,6 +274,7 @@
   /* ── 기간 상태 ── */
   var PERIOD = { preset:'year', from:null, to:null };
   var TAB='home', STFILTER='', ADVQ='', ADVSORT={k:'sales',d:-1}, ADVLIMIT=30, CAMPLIMIT=50, OPENM={}, OPENCH={}, OPENADV={};
+  var CNTF={min:null,max:null};   /* 신청 횟수 필터 (취소 제외) */
 
   function f(n){ return (Math.round(n)||0).toLocaleString('ko-KR'); }
   function eok(n){ var a=Math.abs(n); if(a>=1e8){ var v=n/1e8; return (a>=10e8? v.toFixed(1): v.toFixed(2))+'억'; } return f(n/1e4)+'만'; }
@@ -356,9 +357,10 @@
     });
     rows.forEach(function(r){
       var c=r.corp||r.store||'(미입력)';
-      if(!advAgg[c]) advAgg[c]={n:0,sales:0,prog:0,sel:0,close:0,cancel:0,moT:0,selT:0};
+      if(!advAgg[c]) advAgg[c]={n:0,cnt:0,sales:0,prog:0,sel:0,close:0,cancel:0,moT:0,selT:0};
       advAgg[c].n++;
       if(CANCEL[r.state]){ advAgg[c].cancel++; return; }
+      advAgg[c].cnt++;
       advAgg[c].sales+=sales(r); advAgg[c].moT+=(r.mo||0); advAgg[c].selT+=(r.sel||0);
       if(r.state==='모집중'||r.state==='추가모집') advAgg[c].prog++;
       else if(r.state==='선정완료') advAgg[c].sel++;
@@ -579,21 +581,72 @@
   }
 
   /* ── 광고주 ── */
+  var CNT_BUCKETS=[[1,1,'1회'],[2,2,'2회'],[3,3,'3회'],[4,4,'4회'],[5,5,'5회'],[6,6,'6회'],[7,9,'7~9회'],[10,9999,'10회+']];
+  function bucketColor(lo){ return lo===1? '#b45309' : lo<5? 'var(--blue)' : '#0f6e56'; }
   function renderAdv(A){
-    var arr=Object.keys(A.advAgg).map(function(k){return {k:k,v:A.advAgg[k]};});
+    var all=Object.keys(A.advAgg).map(function(k){return {k:k,v:A.advAgg[k]};}).filter(function(x){return x.v.cnt>0 || x.v.cancel>0;});
+    var act=all.filter(function(x){return x.v.cnt>0;});   /* 취소만 있는 광고주 제외한 활동 광고주 */
+
+    /* KPI */
+    var repeat=act.filter(function(x){return x.v.cnt>=2;}).length;
+    var once=act.filter(function(x){return x.v.cnt===1;}).length;
+    var loyal=act.filter(function(x){return x.v.cnt>=5;});
+    var loyalSales=0; loyal.forEach(function(x){ loyalSales+=x.v.sales; });
+    var cnts=act.map(function(x){return x.v.cnt;}).sort(function(a,b){return a-b;});
+    var avg=cnts.length? cnts.reduce(function(a,b){return a+b;},0)/cnts.length : 0;
+    var med=cnts.length? cnts[Math.floor((cnts.length-1)/2)] : 0;
+    var top=act.slice().sort(function(a,b){return b.v.cnt-a.v.cnt;})[0];
+    var h='<div class="row k5" style="grid-template-columns:repeat(4,1fr)">'+
+      kpi('🔁','재신청률', '<span style="color:var(--blue)">'+(act.length? Math.round(repeat/act.length*100):0)+'%</span>', '광고주 '+f(act.length)+'곳 중 '+f(repeat)+'곳이 2회 이상 신청')+
+      kpi('📊','평균 신청 횟수', avg.toFixed(1)+'<small style="font-size:14px">회</small>', '중앙값 '+med+'회'+(top? ' · 최다 '+esc(top.k)+' '+top.v.cnt+'회':''))+
+      kpi('1️⃣','1회만 신청 (단발)', '<span style="color:#b45309">'+f(once)+'<small style="font-size:14px">곳</small></span>', (act.length? Math.round(once/act.length*100):0)+'% — 재신청 유도 대상')+
+      kpi('💎','5회 이상 (충성)', '<span style="color:#0f6e56">'+f(loyal.length)+'<small style="font-size:14px">곳</small></span>', (act.length? Math.round(loyal.length/act.length*100):0)+'% · 매출의 '+(A.tot? Math.round(loyalSales/A.tot*100):0)+'% 차지')+
+      '</div>';
+
+    /* 분포 히스토그램 */
+    var buckets=CNT_BUCKETS.map(function(bk){
+      var list=act.filter(function(x){return x.v.cnt>=bk[0] && x.v.cnt<=bk[1];});
+      var s=0; list.forEach(function(x){s+=x.v.sales;});
+      return { lo:bk[0], hi:bk[1], lbl:bk[2], n:list.length, sales:s };
+    });
+    var maxN=1; buckets.forEach(function(b){ maxN=Math.max(maxN,b.n); });
+    var filterOn = CNTF.min!=null;
+    h+='<div class="card" style="margin-bottom:14px"><div class="toolrow">'+
+      '<div><h3>📈 신청 횟수별 광고주 분포</h3><div class="td" style="margin:0">선택 기간 · 신청 횟수 = 취소 제외 캠페인 수 · <b>막대 클릭</b> 또는 <b>횟수 입력</b> → 아래 리스트 필터</div></div>'+
+      '<div class="range" style="box-shadow:none">🔢 신청 횟수 <input type="number" min="1" id="cntMin" style="width:56px;text-align:center" value="'+(CNTF.min!=null? CNTF.min:'')+'" placeholder="1"> 회 ~ '+
+      '<input type="number" min="1" id="cntMax" style="width:56px;text-align:center" value="'+(CNTF.max!=null && CNTF.max<9999? CNTF.max:'')+'" placeholder="이상"> 회 '+
+      '<button class="btn sm" onclick="PZ.cntApply()">적용</button> <button class="btn ghost sm" onclick="PZ.cntReset()">초기화</button></div></div>'+
+      '<div id="cntChart" style="display:flex;align-items:flex-end;gap:10px;padding-top:10px">';
+    buckets.forEach(function(b,i){
+      var on = filterOn && CNTF.min===b.lo && CNTF.max===b.hi;
+      var hh=Math.round(b.n/maxN*120);
+      h+='<div data-cb="'+i+'" onclick="PZ.cntBar('+b.lo+','+b.hi+')" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;cursor:pointer'+(on? ';background:#eaf1fe;border-radius:10px;padding:6px 0 2px':'')+'">'+
+        '<div class="mamt"'+(on?' style="color:var(--blue)"':'')+'><b>'+f(b.n)+'곳</b></div>'+
+        '<div class="b" style="height:'+Math.max(b.n?4:1,hh)+'px;width:34px;background:'+bucketColor(b.lo)+';border-radius:5px 5px 0 0'+(b.n?'':';opacity:.25')+'"></div>'+
+        '<div class="mlbl"'+(on?' style="color:var(--blue)"':'')+'>'+b.lbl+(on?' ✓':'')+'</div>'+
+        '<div class="mamt">'+(act.length? Math.round(b.n/act.length*100):0)+'%</div></div>';
+    });
+    h+='</div><div class="s" style="margin-top:8px">호버 시 구간 광고주 수·매출 합계 · 막대 클릭 = 그 구간만 필터(재클릭 해제) · 입력창에 한 칸만 넣으면 "N회 이상"</div></div>';
+
+    /* 리스트 (검색·횟수 필터·정렬) */
+    var arr=all;
+    if(filterOn) arr=arr.filter(function(x){return x.v.cnt>=CNTF.min && x.v.cnt<=CNTF.max;});
     if(ADVQ){ var q=ADVQ.toLowerCase(); arr=arr.filter(function(x){return x.k.toLowerCase().indexOf(q)>=0;}); }
     arr.sort(function(a,b){
       var k=ADVSORT.k, d=ADVSORT.d;
       var av=k==='name'? a.k : a.v[k]||0, bv=k==='name'? b.k : b.v[k]||0;
       return (av<bv? -1: av>bv? 1:0)*d;
     });
-    var h='<div class="card"><div class="toolrow"><div><h3>🏢 광고주별 현황</h3><div class="td" style="margin:0">선택 기간 · 광고주 '+f(arr.length)+'곳 · 💡 행 클릭 시 캠페인 리스트 · 열 클릭 정렬</div></div>'+
-      '<div style="display:flex;gap:8px"><input class="search" placeholder="🔍 광고주 검색" value="'+esc(ADVQ)+'" oninput="PZ.advSearch(this.value)"><button class="btn ghost" onclick="PZ.csvAdv()">⬇ CSV</button></div></div>'+
-      '<div class="scroll"><table><tr><th class="sortable" onclick="PZ.advSort(\'name\')">#&nbsp;광고주'+sArrow('name')+'</th><th class="sortable" onclick="PZ.advSort(\'n\')">캠페인 신청'+sArrow('n')+'</th><th>진행중</th><th>선정완료</th><th>종료</th><th>취소</th><th>모집/선정 인원</th><th class="sortable" onclick="PZ.advSort(\'sales\')">매출'+sArrow('sales')+'</th><th>비중</th></tr>';
+    var fSales=0; arr.forEach(function(x){fSales+=x.v.sales;});
+    var fLabel = filterOn? ('신청 '+CNTF.min+(CNTF.max>=9999? '회 이상' : CNTF.max===CNTF.min? '회' : '~'+CNTF.max+'회')) : '';
+    h+='<div class="card"><div class="toolrow"><div><h3>🏢 광고주별 현황</h3><div class="td" style="margin:0">선택 기간 · 광고주 '+f(arr.length)+'곳 · 💡 행 클릭 시 캠페인 리스트 · 열 클릭 정렬</div></div>'+
+      '<div style="display:flex;gap:8px"><input class="search" placeholder="🔍 광고주 검색" value="'+esc(ADVQ)+'" oninput="PZ.advSearch(this.value)"><button class="btn ghost" onclick="PZ.csvAdv()">⬇ CSV</button></div></div>';
+    if(filterOn) h+='<div class="chips" style="margin-bottom:10px;align-items:center"><span class="badge bg-blue" style="font-size:12px;padding:5px 12px">🔢 '+fLabel+' 필터 — '+f(arr.length)+'곳 · 매출 합계 '+eok(fSales)+'</span><span class="chip" onclick="PZ.cntReset()">✕ 필터 해제 (전체 '+f(all.length)+'곳)</span></div>';
+    h+='<div class="scroll"><table><tr><th class="sortable" onclick="PZ.advSort(\'name\')">#&nbsp;광고주'+sArrow('name')+'</th><th class="sortable" onclick="PZ.advSort(\'cnt\')">신청 횟수'+sArrow('cnt')+'</th><th>진행중</th><th>선정완료</th><th>종료</th><th>취소</th><th>모집/선정 인원</th><th class="sortable" onclick="PZ.advSort(\'sales\')">매출'+sArrow('sales')+'</th><th>비중</th></tr>';
     arr.slice(0,ADVLIMIT).forEach(function(x,i){
       var open=!!OPENADV[x.k];
       h+='<tr class="clickable'+(open?' open':'')+'" onclick="PZ.togAdv(\''+esc(x.k).replace(/'/g,"\\'")+'\')"><td><span class="caret">▶</span><span class="mutd">'+(i+1)+'</span> <b>'+esc(x.k)+'</b></td>'+
-        '<td><b>'+f(x.v.n)+'건</b></td><td><span class="badge '+(x.v.prog?'bg-blue':'bg-gray')+'">'+x.v.prog+'</span></td>'+
+        '<td><b>'+f(x.v.cnt)+'건</b></td><td><span class="badge '+(x.v.prog?'bg-blue':'bg-gray')+'">'+x.v.prog+'</span></td>'+
         '<td>'+f(x.v.sel)+'</td><td>'+f(x.v.close)+'</td><td class="mutd">'+f(x.v.cancel)+'</td>'+
         '<td class="mutd">'+f(x.v.moT)+' / '+f(x.v.selT)+'명</td><td><b>'+eok(x.v.sales)+'</b></td>'+
         '<td class="mutd">'+(A.tot? (x.v.sales/A.tot*100).toFixed(1):0)+'%</td></tr>';
@@ -604,8 +657,24 @@
     });
     h+='</table></div>'+(arr.length>ADVLIMIT? '<span class="more" onclick="PZ.moreAdv()">＋ 나머지 '+f(arr.length-ADVLIMIT)+'곳 더 보기</span>':'')+'</div>';
     document.getElementById('tab-adv').innerHTML=h;
+    hookCntTip(buckets);
   }
   function sArrow(k){ return ADVSORT.k===k? (ADVSORT.d<0?' ▼':' ▲') : ' ⇅'; }
+  function hookCntTip(buckets){
+    var el=document.getElementById('cntChart'), tip=document.getElementById('tip');
+    if(!el) return;
+    el.onmousemove=function(ev){
+      var col=ev.target && ev.target.closest? ev.target.closest('[data-cb]'):null;
+      if(!col){ tip.style.display='none'; return; }
+      var b=buckets[+col.getAttribute('data-cb')];
+      tip.innerHTML='<b>신청 '+b.lbl+'</b><br>광고주 <b>'+f(b.n)+'곳</b><br>매출 합계 '+f(b.sales/1e4)+'만원';
+      tip.style.display='block';
+      var w=tip.offsetWidth,hh=tip.offsetHeight,x=ev.clientX+14,y=ev.clientY-hh/2;
+      if(x+w>innerWidth-8) x=ev.clientX-w-14; if(y<8)y=8;
+      tip.style.left=x+'px'; tip.style.top=y+'px';
+    };
+    el.onmouseleave=function(){ tip.style.display='none'; };
+  }
 
   /* ── 캠페인 현황 ── */
   function renderCamp(A){
@@ -723,6 +792,15 @@
     moreCamp: function(){ CAMPLIMIT+=100; render(); },
     advSearch: function(q){ ADVQ=q; clearTimeout(window.__advT); window.__advT=setTimeout(function(){ var el=document.activeElement; render(); var inp=document.querySelector('#tab-adv .search'); if(inp && el && el.className==='search'){ inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length);} },350); },
     advSort: function(k){ if(ADVSORT.k===k) ADVSORT.d*=-1; else ADVSORT={k:k,d:k==='name'?1:-1}; render(); },
+    cntBar: function(lo,hi){ if(CNTF.min===lo && CNTF.max===hi) CNTF={min:null,max:null}; else CNTF={min:lo,max:hi}; ADVLIMIT=30; render(); },
+    cntApply: function(){
+      var a=parseInt(document.getElementById('cntMin').value,10), b=parseInt(document.getElementById('cntMax').value,10);
+      if(isNaN(a) && isNaN(b)) return;
+      if(isNaN(a)) a=1; if(isNaN(b)) b=9999;
+      if(a>b){ var t=a; a=b; b=t; }
+      CNTF={min:a,max:b}; ADVLIMIT=30; render();
+    },
+    cntReset: function(){ CNTF={min:null,max:null}; ADVLIMIT=30; render(); },
     stFilter: function(s){ STFILTER = (STFILTER===s)? '': s; CAMPLIMIT=50;
       if(TAB!=='camp'){ switchTab('camp'); } else render(); },
     goSt: function(s){ STFILTER=s; CAMPLIMIT=50; switchTab('camp'); },
@@ -769,14 +847,16 @@
     csvCh: function(ch){ var A=agg(); dlCsv('퍼그제로_'+ch+'_캠페인.csv', CAMP_HEAD, campCsvLines(A.ok.filter(function(r){return (r.chnnl||'기타')===ch;}))); },
     csvAll: function(){ var A=agg(); dlCsv('퍼그제로_캠페인_전체.csv', CAMP_HEAD, campCsvLines(A.rows)); },
     csvAdv: function(){ var A=agg(); var arr=Object.keys(A.advAgg).map(function(k){return {k:k,v:A.advAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
-      dlCsv('퍼그제로_광고주별.csv','광고주,캠페인수,진행중,선정완료,종료,취소,모집인원,선정인원,매출(원)',
-        arr.map(function(x){return ['"'+x.k.replace(/"/g,'""')+'"',x.v.n,x.v.prog,x.v.sel,x.v.close,x.v.cancel,x.v.moT,x.v.selT,x.v.sales].join(',');})); },
+      if(CNTF.min!=null) arr=arr.filter(function(x){return x.v.cnt>=CNTF.min && x.v.cnt<=CNTF.max;});
+      if(ADVQ){ var q=ADVQ.toLowerCase(); arr=arr.filter(function(x){return x.k.toLowerCase().indexOf(q)>=0;}); }
+      dlCsv('퍼그제로_광고주별.csv','광고주,신청횟수(취소제외),진행중,선정완료,종료,취소,모집인원,선정인원,매출(원)',
+        arr.map(function(x){return ['"'+x.k.replace(/"/g,'""')+'"',x.v.cnt,x.v.prog,x.v.sel,x.v.close,x.v.cancel,x.v.moT,x.v.selT,x.v.sales].join(',');})); },
     csvMonthly: function(){ var A=agg();
       dlCsv('퍼그제로_월별손익.csv','월,매출(원),건수,포인트수익(원),카드수수료(원),마케팅비용(원),영업이익(원)',
         monthsInRange().map(function(k){ var v=A.mAgg[k]||{n:0,sales:0,profit:0}; var mkt=monthCost(k), fee=Math.round(v.sales*FEE);
           return [k,v.sales,v.n,v.profit,fee,mkt,v.profit-fee-mkt].join(','); })); }
   };
-  function resetOpen(){ OPENM={}; OPENCH={}; OPENADV={}; ADVLIMIT=30; CAMPLIMIT=50; }
+  function resetOpen(){ OPENM={}; OPENCH={}; OPENADV={}; ADVLIMIT=30; CAMPLIMIT=50; CNTF={min:null,max:null}; }
   function switchTab(t){
     TAB=t;
     document.querySelectorAll('#nav button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-t')===t); });
