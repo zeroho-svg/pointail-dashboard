@@ -24,8 +24,8 @@
     // 경영: 하위 표시 순서 [손익 오버뷰, 매출 대시보드], 단 클릭 진입 기본은 매출 대시보드
     { key: 'mgmt', label: '📊 경영', ids: ['tab-btn-cost', 'tab-btn-sales-dash'], defaultId: 'tab-btn-sales-dash', panels: ['tab-cost', 'tab-sales-dash'] },
     { key: 'sales', label: '💼 영업', ids: ['tab-btn-dashboard', 'tab-btn-sales-perf', 'tab-btn-advmgr'], panels: ['tab-dashboard', 'tab-sales-perf', 'tab-advmgr'] },
-    { key: 'mkt', label: '📣 마케팅', ids: ['tab-btn-meta'], panels: ['tab-meta'] },
-    { key: 'admin', label: '⚙️ 관리', ids: ['tab-btn-costin', 'tg-data', 'tg-db', 'tg-settings'], panels: ['tab-costin', 'tab-upload', 'tab-add', 'tab-merged', 'tab-leads-t', 'tab-mem-t', 'tab-camp-t', 'tab-settings', 'tab-rules'] }
+    { key: 'mkt', label: '📣 마케팅', ids: ['tab-btn-meta', 'tab-btn-costin'], panels: ['tab-meta', 'tab-costin'] },
+    { key: 'admin', label: '⚙️ 관리', ids: ['tg-data', 'tg-db', 'tg-settings'], panels: ['tab-upload', 'tab-add', 'tab-merged', 'tab-leads-t', 'tab-mem-t', 'tab-camp-t', 'tab-settings', 'tab-rules'] }
   ];
   var cur = 'home';
 
