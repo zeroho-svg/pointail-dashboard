@@ -366,6 +366,10 @@
       })
       .catch(function(){ if(b) b.textContent='⚠️ 동기화 실패'; });
   }
+  function myIdent(){
+    try{ var s=JSON.parse(localStorage.getItem('pz_auth_user')||'null'); if(!s) return '';
+      return (s.name? s.name+' ' : '') + '(' + (s.email||'').split('@')[0] + ')'; }catch(e){ return ''; }
+  }
   /* ── 역할 (토큰에서 해석) ── */
   function myRoleLv(){
     try{
@@ -533,8 +537,11 @@
     var chArr=Object.keys(chSub).map(function(x){return{k:x,v:chSub[x]};}).sort(function(a,b){return b.v.s-a.v.s;});
     var advArr=Object.keys(advSub).map(function(x){return{k:x,v:advSub[x]};}).sort(function(a,b){return b.v.s-a.v.s;});
     var advSet={}; list.forEach(function(r){ advSet[r.corp||r.store||'-']=1; });
+    var who='';
+    if(c.__mgr||c.__staff) who=' · 💼 담당 '+esc(c.__mgr||'-')+' / 실무 '+esc(c.__staff||'-');
+    if(c.__by) who+=' · 🖊️ 마지막 수정 '+esc(c.__by);
     var h='<div class="banner"><h4>📅 '+k.replace('-','년 ')+'월 세부 내역</h4>'+
-      '<div class="bd">캠페인 '+f(list.length)+'건 · 광고주 '+f(Object.keys(advSet).length)+'곳</div>'+
+      '<div class="bd">캠페인 '+f(list.length)+'건 · 광고주 '+f(Object.keys(advSet).length)+'곳'+who+'</div>'+
       '<div class="bchips">'+
       '<div class="bchip"><div class="l">매출</div><div class="n">'+eok(v.sales)+'</div></div>'+
       '<div class="bchip"><div class="l">포인트 수익</div><div class="n">'+eok(v.profit)+'</div></div>'+
@@ -742,10 +749,10 @@
     var items=costItems(), mons=monthsInRange().slice().reverse();
     var thisM=new Date().toISOString().slice(0,7);
     var h='<div class="row k2"><div class="card"><div class="toolrow"><div><h3>💸 마케팅 비용 입력 <span class="tag hand">수기</span></h3>'+
-      '<div class="td" style="margin:0">항목별 · 월별 입력 → 저장 시 전 탭 손익에 자동 반영 (모든 PC 공유)</div></div></div>'+
+      '<div class="td" style="margin:0">항목별 · 월별 입력 + 담당자·실무자 기록 → 저장 시 전 탭 손익에 자동 반영 (모든 PC 공유)</div></div></div>'+
       '<div class="scroll"><table><tr><th>월</th>';
     items.forEach(function(it){ h+='<th>'+esc(it.name)+'</th>'; });
-    h+='<th>합계</th><th>비용률</th><th>ROAS</th></tr>';
+    h+='<th>합계</th><th>비용률</th><th>ROAS</th><th>담당자</th><th>실무자</th><th>마지막 수정</th></tr>';
     var shown=0, sums={};
     mons.forEach(function(k){
       var mv=(A.mAgg[k]||{sales:0}).sales, tot=monthCost(k);
@@ -758,12 +765,15 @@
         h+='<td><input class="ci" data-m="'+k+'" data-i="'+esc(it.id)+'" value="'+(x? f(x):'')+'" placeholder="0"></td>'; });
       h+='<td><b>'+(tot? eok(tot):'–')+'</b></td>'+
         '<td>'+(tot&&mv? '<span class="'+(tot/mv>0.15?'neg':'')+'">'+(tot/mv*100).toFixed(1)+'%</span>':'<span class="mutd">–</span>')+'</td>'+
-        '<td>'+(tot&&mv? '<span class="pos">'+f(mv/tot*100)+'%</span>':'<span class="mutd">–</span>')+'</td></tr>';
+        '<td>'+(tot&&mv? '<span class="pos">'+f(mv/tot*100)+'%</span>':'<span class="mutd">–</span>')+'</td>'+
+        '<td><input class="cm" data-m="'+k+'" data-f="__mgr" value="'+esc(c.__mgr||'')+'" placeholder="담당자" style="width:78px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px"></td>'+
+        '<td><input class="cm" data-m="'+k+'" data-f="__staff" value="'+esc(c.__staff||'')+'" placeholder="실무자" style="width:78px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px"></td>'+
+        '<td class="mutd" style="font-size:11px">'+(c.__by? esc(c.__by)+'<br>'+new Date(c.__at||0).toISOString().slice(5,16).replace('T',' ') : '–')+'</td></tr>';
     });
     var sumAll=0; items.forEach(function(it){ sumAll+=(sums[it.id]||0); });
     h+='<tr class="sum"><td>합계</td>';
     items.forEach(function(it){ h+='<td>'+(sums[it.id]? eok(sums[it.id]):'–')+'</td>'; });
-    h+='<td>'+(sumAll? eok(sumAll):'–')+'</td><td>'+(sumAll&&A.tot? (sumAll/A.tot*100).toFixed(1)+'%':'–')+'</td><td>'+(sumAll&&A.tot? '<span class="pos">'+f(A.tot/sumAll*100)+'%</span>':'–')+'</td></tr>';
+    h+='<td>'+(sumAll? eok(sumAll):'–')+'</td><td>'+(sumAll&&A.tot? (sumAll/A.tot*100).toFixed(1)+'%':'–')+'</td><td>'+(sumAll&&A.tot? '<span class="pos">'+f(A.tot/sumAll*100)+'%</span>':'–')+'</td><td colspan="3"></td></tr>';
     h+='</table></div><div style="display:flex;align-items:center;gap:10px;margin-top:14px"><button class="btn" onclick="PZ.saveCosts()">💾 비용 저장</button><span class="s" id="costMsg"></span></div></div>';
 
     /* 항목 관리 + 구성 */
@@ -869,15 +879,28 @@
         if(it && el.value.trim()) it.name=el.value.trim();
       });
       COSTS.__items__=items;
+      var changed={};
       document.querySelectorAll('#tab-cost input.ci').forEach(function(el){
         var m=el.getAttribute('data-m'), id=el.getAttribute('data-i');
         if(!COSTS[m]) COSTS[m]={};
-        COSTS[m][id]=parseInt(String(el.value).replace(/[^\d]/g,''),10)||0;
+        var nv=parseInt(String(el.value).replace(/[^\d]/g,''),10)||0;
+        if((+COSTS[m][id]||0)!==nv) changed[m]=1;
+        COSTS[m][id]=nv;
       });
+      document.querySelectorAll('#tab-cost input.cm').forEach(function(el){
+        var m=el.getAttribute('data-m'), fd=el.getAttribute('data-f');
+        if(!COSTS[m]) COSTS[m]={};
+        var nv=String(el.value||'').trim().slice(0,30);
+        if(String(COSTS[m][fd]||'')!==nv) changed[m]=1;
+        COSTS[m][fd]=nv;
+      });
+      /* 🖊️ 자동 수정자 기록: 값이 바뀐 월에만 저장자·시각 스탬프 */
+      var me=myIdent();
+      Object.keys(changed).forEach(function(m){ COSTS[m].__by=me; COSTS[m].__at=Date.now(); });
       var msg=document.getElementById('costMsg'); msg.textContent='저장 중…';
       wfetch('pz/costs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(COSTS)})
         .then(function(r){return r.json();})
-        .then(function(j){ if(j.ok){ render(); document.getElementById('costMsg').textContent='✅ 저장 완료 ('+new Date().toTimeString().slice(0,5)+')'; } else msg.textContent='⚠️ 저장 실패'; })
+        .then(function(j){ if(j.ok){ render(); document.getElementById('costMsg').textContent='✅ 저장 완료 ('+new Date().toTimeString().slice(0,5)+(me?' · '+me:'')+')'; } else msg.textContent='⚠️ 저장 실패'; })
         .catch(function(){ msg.textContent='⚠️ 저장 실패 — 네트워크 확인'; });
     },
     /* CSV */
