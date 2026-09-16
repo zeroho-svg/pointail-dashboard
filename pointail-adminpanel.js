@@ -248,6 +248,7 @@
   }
   function ensurePt() {
     var nav = document.getElementById('main-tabs'); if (!nav) return;      // 포인테일이 아니면 무시
+    hookShowTab();
     if (ptRole() < 3) return;                                              // ADMIN 미만은 탭 자체를 만들지 않음
     if (!document.getElementById('tab-admusr')) {
       var ref = document.querySelector('.panel');
@@ -260,20 +261,29 @@
       b.id = 'tab-btn-admusr'; b.className = anyTab ? anyTab.className.replace(' active', '') : 'tab';
       b.textContent = '👥 사용자·통계'; b.type = 'button';
       b.addEventListener('click', function () {
-        document.querySelectorAll('.panel').forEach(function (x) { x.classList.remove('active'); });
+        // 원본 showTab을 그대로 사용 → 패널 전환·그룹 정리 등 기존 로직에 위임
+        var ok = false;
+        if (typeof window.showTab === 'function') { try { window.showTab('admusr'); ok = true; } catch (e) {} }
+        if (!ok) {
+          document.querySelectorAll('.panel').forEach(function (x) { x.classList.remove('active'); });
+          var p2 = document.getElementById('tab-admusr'); if (p2) p2.classList.add('active');
+        }
         document.querySelectorAll('#main-tabs .tab, #main-tabs .subtab').forEach(function (x) { x.classList.remove('active'); });
-        var p2 = document.getElementById('tab-admusr'); if (p2) p2.classList.add('active');
         b.classList.add('active');
         if (!b.__mounted) { b.__mounted = true; mount(document.getElementById('tab-admusr'), { dash: 'pt' }); }
       });
     }
     var row = document.getElementById('ptnavrow-admin');
-    if (row) { if (b.parentElement !== row) row.appendChild(b); }
+    if (row) { if (b.parentElement !== row || row.firstElementChild !== b) row.insertBefore(b, row.firstChild); }
     else if (!b.parentElement) nav.appendChild(b);
   }
-  if (typeof window.showTab === 'function' && !window.showTab.__ptAdm) {
+  function hookShowTab() {
+    if (typeof window.showTab !== 'function' || window.showTab.__ptAdm) return;
     var _st = window.showTab;
-    window.showTab = function () { var b = document.getElementById('tab-btn-admusr'); if (b) b.classList.remove('active'); return _st.apply(this, arguments); };
+    window.showTab = function (n) {
+      if (n !== 'admusr') { var b = document.getElementById('tab-btn-admusr'); if (b) b.classList.remove('active'); }
+      return _st.apply(this, arguments);
+    };
     window.showTab.__ptAdm = true;
   }
   var t = null;

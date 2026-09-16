@@ -115,14 +115,15 @@
       });
     });
 
-    // 경영 하위 탭 표시 순서 고정: [손익 오버뷰, 매출 대시보드]
-    var mrow = document.getElementById('ptnavrow-mgmt');
-    if (mrow) {
-      ['tab-btn-cost', 'tab-btn-sales-dash'].forEach(function (id) {
+    // 하위 탭 표시 순서 고정 (ids 순서대로 재배치)
+    [['mgmt', ['tab-btn-cost', 'tab-btn-sales-dash']],
+     ['mkt', ['tab-btn-meta', 'tab-btn-costin']]].forEach(function (pair) {
+      var r = document.getElementById('ptnavrow-' + pair[0]); if (!r) return;
+      pair[1].forEach(function (id) {
         var b = document.getElementById(id);
-        if (b && b.parentElement === mrow) mrow.appendChild(b);   // ids 순서대로 재배치
+        if (b && b.parentElement === r) r.appendChild(b);
       });
-    }
+    });
 
     // 남은 원래 컨테이너는 숨김 (미지정 신규 버튼이 들어오면 다시 표시)
     var tm = nav.querySelector('.tabs-main');
