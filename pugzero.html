@@ -183,6 +183,7 @@
     <button data-t="adv">🏢 광고주</button>
     <button data-t="camp">🚀 캠페인 현황</button>
     <button data-t="cost">💸 비용 관리</button>
+    <button data-t="admin" id="pzAdminBtn" style="display:none">⚙️ 관리</button>
   </div>
 
   <div class="period">
@@ -201,6 +202,7 @@
     <div class="tab" id="tab-adv"></div>
     <div class="tab" id="tab-camp"></div>
     <div class="tab" id="tab-cost"></div>
+    <div class="tab" id="tab-admin"></div>
   </div>
 
 </div>
@@ -358,8 +360,20 @@
   function refresh(force){
     var b=document.getElementById('badgeTxt'); if(b) b.textContent='⏳ 동기화 중… (최대 2분)';
     wfetch('pz/refresh?force='+(force?'1':'0'),{method:'POST'}).then(function(r){return r.json();})
-      .then(function(){ load(render); })
+      .then(function(j){
+        if(j && j.error){ if(b) b.textContent='⚠️ '+(j.hint||j.error).slice(0,40); setTimeout(function(){ load(render); }, 2500); return; }
+        load(render);
+      })
       .catch(function(){ if(b) b.textContent='⚠️ 동기화 실패'; });
+  }
+  /* ── 역할 (토큰에서 해석) ── */
+  function myRoleLv(){
+    try{
+      var s=JSON.parse(localStorage.getItem('pz_auth_user')||'null'); if(!s||!s.tk) return 0;
+      var t=s.tk, p=t.slice(0, t.lastIndexOf('.')).replace(/-/g,'+').replace(/_/g,'/');
+      var j=JSON.parse(decodeURIComponent(atob(p).split('').map(function(c){return '%'+('00'+c.charCodeAt(0).toString(16)).slice(-2);}).join('')));
+      return {OWNER:4,ADMIN:3,MEMBER:2,VIEWER:1}[j.r]||0;
+    }catch(e){ return 0; }
   }
 
   /* ── 집계 ── */
@@ -407,6 +421,7 @@
 
   /* ── 렌더: 공통 ── */
   function render(){
+    if(TAB==='admin') return;   /* 관리 탭은 자체 렌더 */
     if(!ROWS.length || !isNew()){ return; }
     document.getElementById('loading').style.display='none';
     document.getElementById('tabs').style.display='';
@@ -885,6 +900,11 @@
     document.querySelectorAll('#nav button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-t')===t); });
     document.querySelectorAll('.tab').forEach(function(x){ x.classList.remove('on'); });
     document.getElementById('tab-'+t).classList.add('on');
+    if(t==='admin'){
+      var el=document.getElementById('tab-admin');
+      if(!el.__mounted && window.PTADMIN){ el.__mounted=true; window.PTADMIN.mount(el, { wfetch: wfetch }); }
+      return;
+    }
     render();
   }
   document.getElementById('nav').addEventListener('click', function(e){
@@ -895,12 +915,14 @@
   var booted=false;
   window.__pzInitApp = function(){
     if(booted) return; booted=true;
+    if(myRoleLv()>=3){ var ab=document.getElementById('pzAdminBtn'); if(ab) ab.style.display=''; }
     load(function(){
-      if(!ROWS.length || !isNew() || staleMs() > 3*3600*1000) refresh(true);
+      if(!ROWS.length || !isNew() || staleMs() > 3*3600*1000) refresh(false);   /* 자동 갱신은 비강제(서버 가드 통과 시에만 수집) */
       if(ROWS.length && isNew()) render();
     });
   };
 })();
 </script>
+<script src="pointail-adminpanel.js?v=1" defer></script>
 </body>
 </html>

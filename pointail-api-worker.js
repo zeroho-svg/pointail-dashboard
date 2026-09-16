@@ -278,9 +278,46 @@ async function authSign(payload, env) {
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
   return b64u(new Uint8Array(sig));
 }
-async function authIssue(email, env) {
-  const payload = b64u(new TextEncoder().encode(JSON.stringify({ e: email, x: Date.now() + AUTH_HOURS * 3600 * 1000 })));
+async function authIssue(email, role, env) {
+  const payload = b64u(new TextEncoder().encode(JSON.stringify({ e: email, r: role || "MEMBER", x: Date.now() + AUTH_HOURS * 3600 * 1000 })));
   return payload + "." + (await authSign(payload, env));
+}
+// ── 👥 사용자 스토어 · 역할 · 사용 로그 ──
+const ROLE_LV = { OWNER: 4, ADMIN: 3, MEMBER: 2, VIEWER: 1 };
+const DEFAULT_OWNER = "zeroho@storelink.io";
+function roleLv(r) { return ROLE_LV[r] || 0; }
+async function getUsersDoc(env) {
+  let d = null;
+  try { d = JSON.parse((await env.PT_KV.get("auth_users")) || "null"); } catch (e) {}
+  if (!d || typeof d !== "object") d = { policy: "domain", users: {} };
+  if (!d.users) d.users = {};
+  if (!d.policy) d.policy = "domain";
+  if (!d.users[DEFAULT_OWNER]) d.users[DEFAULT_OWNER] = { name: "박영호", role: "OWNER", active: true, dash: "all", createdAt: Date.now() };
+  d.users[DEFAULT_OWNER].role = "OWNER"; d.users[DEFAULT_OWNER].active = true;   // 기본 OWNER 잠금 해제 방지
+  return d;
+}
+async function logEvent(env, email, a, d) {
+  try {
+    let arr = [];
+    try { arr = JSON.parse((await env.PT_KV.get("auth_log")) || "[]"); } catch (e) {}
+    arr.unshift({ t: Date.now(), e: email, a: a, d: String(d || "").slice(0, 120) });
+    if (arr.length > 400) arr = arr.slice(0, 400);
+    await env.PT_KV.put("auth_log", JSON.stringify(arr));
+  } catch (e) {}
+}
+async function trackUsage(env, email, p, m) {
+  try {
+    const day = new Date().toISOString().slice(0, 10);
+    const key = "usage_" + day;
+    let d = {};
+    try { d = JSON.parse((await env.PT_KV.get(key)) || "{}"); } catch (e) {}
+    const cat = p.indexOf("/pz") === 0 ? "pz" : (p.indexOf("/admin") === 0 ? "adm" : "pt");
+    const kind = m === "PUT" ? "w" : (p.indexOf("refresh") >= 0 || p.indexOf("crawl") >= 0 ? "s" : "r");
+    const u = (d[email] = d[email] || {});
+    const c = (u[cat] = u[cat] || { r: 0, w: 0, s: 0 });
+    c[kind] = (c[kind] || 0) + 1;
+    await env.PT_KV.put(key, JSON.stringify(d), { expirationTtl: 60 * 86400 });
+  } catch (e) {}
 }
 async function authVerify(tok, env) {
   try {
@@ -332,17 +369,123 @@ export default {
         if (info.aud !== AUTH_CLIENT_ID) return json({ error: "잘못된 클라이언트" }, 401, cors);
         if (info.email_verified !== "true" && info.email_verified !== true) return json({ error: "이메일 미인증 계정" }, 401, cors);
         if (!info.email || !String(info.email).endsWith("@" + AUTH_DOMAIN)) return json({ error: "@" + AUTH_DOMAIN + " 계정만 허용됩니다" }, 403, cors);
-        const token = await authIssue(info.email, env);
-        return json({ ok: true, token: token, email: info.email, expiresIn: AUTH_HOURS * 3600 }, 200, cors);
+        // ── 사용자 스토어 확인 (초대 정책·활성 여부·역할)
+        const email = String(info.email).toLowerCase();
+        const doc = await getUsersDoc(env);
+        let u = doc.users[email];
+        if (doc.policy === "invite" && !u) return json({ error: "초대되지 않은 계정입니다. 관리자에게 초대를 요청하세요." }, 403, cors);
+        if (u && u.active === false) return json({ error: "비활성 처리된 계정입니다. 관리자에게 문의하세요." }, 403, cors);
+        if (!u) { u = { name: info.name || "", role: "MEMBER", active: true, dash: "all", auto: true, createdAt: Date.now() }; doc.users[email] = u; }
+        if (!u.name && info.name) u.name = info.name;
+        u.lastLogin = Date.now();
+        ctx.waitUntil(env.PT_KV.put("auth_users", JSON.stringify(doc)));
+        ctx.waitUntil(logEvent(env, email, "login", ((request.headers.get("user-agent") || "").match(/Chrome|Safari|Edg|Firefox/) || [""])[0]));
+        const token = await authIssue(email, u.role, env);
+        return json({ ok: true, token: token, email: email, role: u.role, expiresIn: AUTH_HOURS * 3600 }, 200, cors);
       } catch (e) {
         return json({ error: "인증 처리 오류: " + e.message }, 500, cors);
       }
     }
+    let ME = null, MYROLE = "MEMBER", MYLV = 0;
     {
       const authz = request.headers.get("Authorization") || "";
       const tok = authz.indexOf("Bearer ") === 0 ? authz.slice(7) : (url.searchParams.get("atk") || "");
       const who = await authVerify(tok, env);
       if (!who) return json({ error: "unauthorized", hint: "@storelink.io 로그인 후 이용하세요" }, 401, cors);
+      const doc = await getUsersDoc(env);
+      const u = doc.users[String(who.e).toLowerCase()];
+      if (!u || u.active === false) return json({ error: "unauthorized", hint: "계정이 비활성 상태입니다" }, 401, cors);
+      ME = String(who.e).toLowerCase(); MYROLE = u.role || who.r || "MEMBER"; MYLV = roleLv(MYROLE);
+      const p = url.pathname, m = request.method;
+      // ── 역할 강제 (서버 차단)
+      if (p.indexOf("/admin/") === 0 && MYLV < 3) return json({ error: "forbidden", hint: "관리자(ADMIN 이상)만 접근할 수 있습니다" }, 403, cors);
+      if (m === "PUT" && p.indexOf("/admin/") !== 0 && MYLV < 2) return json({ error: "forbidden", hint: "VIEWER는 읽기 전용입니다" }, 403, cors);
+      const isForceSync = p === "/snapshot/refresh" || (p === "/pz/refresh" && url.searchParams.get("force") === "1");
+      if (isForceSync || p === "/" || p === "/members") {
+        // 강제 동기화·전량 직접 수집은 관리자만 (어드민 서버 부하 보호)
+        if (MYLV < 3) return json({ error: "forbidden", hint: "강제 동기화는 관리자(ADMIN 이상)만 실행할 수 있습니다. 데이터는 3시간마다 자동 갱신됩니다." }, 403, cors);
+        if (isForceSync) {
+          const ck = "sync_cool_" + (p.indexOf("/pz") === 0 ? "pz" : "pt");
+          const last = +(await env.PT_KV.get(ck)) || 0;
+          const remain = 30 * 60 * 1000 - (Date.now() - last);
+          if (remain > 0) return json({ error: "cooldown", hint: "강제 동기화 쿨다운 — " + Math.ceil(remain / 60000) + "분 후 다시 시도하세요", remainMin: Math.ceil(remain / 60000) }, 429, cors);
+          ctx.waitUntil(env.PT_KV.put(ck, String(Date.now())));
+          ctx.waitUntil(logEvent(env, ME, "sync", p));
+        }
+      }
+      if (m === "PUT" && p.indexOf("/admin/") !== 0) ctx.waitUntil(logEvent(env, ME, "write", p));
+      ctx.waitUntil(trackUsage(env, ME, p, m));
+    }
+
+    // ── 🛠️ 관리자 API ──
+    if (url.pathname === "/admin/users") {
+      const doc = await getUsersDoc(env);
+      if (request.method === "GET") {
+        const list = Object.keys(doc.users).map(function (em) {
+          const u = doc.users[em];
+          return { email: em, name: u.name || "", role: u.role, active: u.active !== false, dash: u.dash || "all", lastLogin: u.lastLogin || null, createdAt: u.createdAt || null, invitedBy: u.invitedBy || (u.auto ? "(자동)" : "") };
+        });
+        return json({ ok: true, policy: doc.policy || "domain", users: list, me: ME, myRole: MYROLE }, 200, cors);
+      }
+      if (request.method === "PUT") {
+        let b = {}; try { b = await request.json(); } catch (e) {}
+        const em = String(b.email || "").toLowerCase();
+        if (!em || !em.endsWith("@" + AUTH_DOMAIN)) return json({ error: "@" + AUTH_DOMAIN + " 이메일만 등록할 수 있습니다" }, 400, cors);
+        const target = doc.users[em];
+        const targetIsOwner = target && target.role === "OWNER";
+        if ((targetIsOwner || b.role === "OWNER") && MYROLE !== "OWNER") return json({ error: "OWNER 계정 변경·OWNER 역할 부여는 OWNER만 할 수 있습니다" }, 403, cors);
+        if (b.action === "invite") {
+          if (target) return json({ error: "이미 등록된 사용자입니다" }, 400, cors);
+          if (["ADMIN", "MEMBER", "VIEWER"].indexOf(b.role) < 0) b.role = "MEMBER";
+          doc.users[em] = { name: String(b.name || "").slice(0, 40), role: b.role, active: true, dash: b.dash || "all", invitedBy: ME, createdAt: Date.now() };
+          ctx.waitUntil(logEvent(env, ME, "admin", "초대: " + em + " (" + b.role + ")"));
+        } else if (b.action === "update") {
+          if (!target) return json({ error: "없는 사용자입니다" }, 404, cors);
+          if (em === ME && b.active === false) return json({ error: "자기 자신은 비활성할 수 없습니다" }, 400, cors);
+          if (targetIsOwner && b.role && b.role !== "OWNER") {
+            const owners = Object.keys(doc.users).filter(function (k) { return doc.users[k].role === "OWNER" && doc.users[k].active !== false; });
+            if (owners.length <= 1) return json({ error: "마지막 OWNER는 강등할 수 없습니다" }, 400, cors);
+          }
+          if (b.role && ["OWNER", "ADMIN", "MEMBER", "VIEWER"].indexOf(b.role) >= 0) target.role = b.role;
+          if (typeof b.active === "boolean") target.active = b.active;
+          if (b.dash) target.dash = b.dash;
+          if (b.name) target.name = String(b.name).slice(0, 40);
+          ctx.waitUntil(logEvent(env, ME, "admin", "변경: " + em + " → " + (b.role || "") + (typeof b.active === "boolean" ? (b.active ? " 활성" : " 비활성") : "")));
+        } else if (b.action === "remove") {
+          if (!target) return json({ error: "없는 사용자입니다" }, 404, cors);
+          if (target.lastLogin) return json({ error: "로그인 이력이 있는 사용자는 삭제 대신 비활성 처리하세요" }, 400, cors);
+          delete doc.users[em];
+          ctx.waitUntil(logEvent(env, ME, "admin", "초대 삭제: " + em));
+        } else return json({ error: "action은 invite/update/remove" }, 400, cors);
+        await env.PT_KV.put("auth_users", JSON.stringify(doc));
+        return json({ ok: true }, 200, cors);
+      }
+      return json({ error: "허용되지 않은 메서드" }, 405, cors);
+    }
+    if (url.pathname === "/admin/policy") {
+      if (request.method !== "PUT") return json({ error: "허용되지 않은 메서드" }, 405, cors);
+      let b = {}; try { b = await request.json(); } catch (e) {}
+      if (b.policy !== "domain" && b.policy !== "invite") return json({ error: "policy는 domain/invite" }, 400, cors);
+      const doc = await getUsersDoc(env);
+      doc.policy = b.policy;
+      await env.PT_KV.put("auth_users", JSON.stringify(doc));
+      ctx.waitUntil(logEvent(env, ME, "admin", "접근 정책: " + (b.policy === "invite" ? "초대된 사용자만" : "@storelink.io 전원")));
+      return json({ ok: true, policy: doc.policy }, 200, cors);
+    }
+    if (url.pathname === "/admin/logs") {
+      let arr = []; try { arr = JSON.parse((await env.PT_KV.get("auth_log")) || "[]"); } catch (e) {}
+      return json({ ok: true, logs: arr }, 200, cors);
+    }
+    if (url.pathname === "/admin/stats") {
+      const days = Math.min(31, Math.max(1, parseInt(url.searchParams.get("days") || "30", 10) || 30));
+      const out = {};
+      const reads = [];
+      for (let i = 0; i < days; i++) {
+        const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+        reads.push(env.PT_KV.get("usage_" + d).then(function (v) { if (v) { try { out[d] = JSON.parse(v); } catch (e) {} } }));
+      }
+      await Promise.all(reads);
+      return json({ ok: true, days: out }, 200, cors);
     }
     // ═════════════════════════════════════════════════════════
 
@@ -565,7 +708,7 @@ export default {
     if (url.pathname === "/pz/refresh") {
       if (!env.PT_KV) return json({ error: "KV 미설정" }, 500, cors);
       let meta = {}; try { meta = JSON.parse((await env.PT_KV.get("pugzero_snap_meta")) || "{}"); } catch (e) {}
-      if (meta.updatedAt && (Date.now() - Date.parse(meta.updatedAt)) < 5 * 60 * 1000 && url.searchParams.get("force") !== "1") {
+      if (meta.updatedAt && (Date.now() - Date.parse(meta.updatedAt)) < 60 * 60 * 1000 && url.searchParams.get("force") !== "1") {
         return json({ ok: false, tooSoon: true, meta: meta }, 200, cors);
       }
       try {
