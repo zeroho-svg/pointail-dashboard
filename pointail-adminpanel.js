@@ -97,7 +97,9 @@
         '<button class="pta-btn" data-act="invite">＋ 초대 (사전 등록)</button>' +
         '<span class="pta-mut" style="font-size:11px;align-self:center">' + DASH_NM + ' 대시보드에 초대 · 즉시 로그인 가능</span></div>';
       h += '<table><tr><th>이름</th><th>이메일</th><th>역할</th><th>상태</th><th>최근 로그인</th><th>동작</th></tr>';
-      users.forEach(function (u) {
+      var inact = users.filter(function (u) { return !u.active; });
+      var shown = users.filter(function (u) { return u.active || S.showInactive; });
+      shown.forEach(function (u) {
         var isMe = u.email === d.me, isOwner = u.role === 'OWNER';
         var canEdit = myLv >= 3 && (!isOwner || my === 'OWNER');
         var roleCell;
@@ -117,6 +119,8 @@
           '<td class="pta-mut">' + fdt(u.lastLogin) + '</td><td>' + actBtn + '</td></tr>';
       });
       h += '</table>';
+      if (inact.length && !S.showInactive) h += '<div style="margin-top:8px"><button class="pta-btn gh" data-showinact="1">💤 비활성 사용자 ' + f(inact.length) + '명 보기</button></div>';
+      else if (inact.length && S.showInactive) h += '<div style="margin-top:8px"><button class="pta-btn gh" data-showinact="0">비활성 숨기기</button></div>';
       h += '<div class="pta-td" style="margin-top:10px">등록 ' + f(users.length) + '명 · 활성 ' + f(act.length) + ' · 최근 7일 로그인 ' + f(act.filter(function (u) { return u.lastLogin > week; }).length) + ' · 30일+ 미로그인 ' + f(act.filter(function (u) { return u.lastLogin && u.lastLogin < month; }).length) + '</div>';
       h += '<div class="pta-card" style="margin:12px 0 0;background:#fafbfd"><h4>🗂️ 역할별 권한 (서버 강제)</h4><div class="pta-td"></div>' +
         '<table style="text-align:center"><tr><th style="text-align:left">기능</th><th>OWNER</th><th>ADMIN</th><th>MEMBER</th><th>VIEWER</th></tr>' +
@@ -198,6 +202,7 @@
         if (S.tab === 'logs' && !S.logs) loadLogs().then(render).catch(function (er) { setMsg('로그 로드 실패: ' + er.message, 1); });
         return; }
       var b = e.target.closest('button'); if (!b) return;
+      if (b.hasAttribute('data-showinact')) { S.showInactive = b.getAttribute('data-showinact') === '1'; render(); return; }
       function userPut(body, okMsg) {
         api('admin/users', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
           .then(function () { return loadUsers(); }).then(function () { setMsg(okMsg); })

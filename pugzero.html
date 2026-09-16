@@ -145,6 +145,10 @@
   #auth-user-bar img{width:22px;height:22px;border-radius:50%;vertical-align:middle;margin-right:6px}
   #auth-user-bar button{border:1px solid var(--line);background:#fff;border-radius:7px;font:inherit;font-size:11.5px;color:var(--ink2);padding:4px 10px;cursor:pointer}
   .app.auth-hidden{display:none}
+
+  /* 🌓 다크모드 (컴퓨터별 개인 설정 · 포인테일과 동일 방식) */
+  html.pz-dark{filter:invert(0.93) hue-rotate(180deg);background:#0e0f12}
+  html.pz-dark img{filter:invert(1) hue-rotate(180deg)}
 </style>
 </head>
 <body>
@@ -174,7 +178,10 @@
       <h1>🐶 퍼그제로 통합 대시보드</h1>
       <div class="sub">퍼그제로 캠페인(PUG_ZERO) · Worker 자동 수집 · <span id="syncTxt">동기화 확인 중…</span></div>
     </div>
-    <button class="sync" id="syncBadge" onclick="PZ.refresh()"><span class="dot"></span><span id="badgeTxt">⚡ 동기화 확인 중</span></button>
+    <div style="display:flex;gap:8px;align-items:flex-start">
+      <button class="sync" id="themeBtn" onclick="PZ.theme()" style="background:#fff;border-color:var(--line);color:var(--ink2)">🌙 어둡게</button>
+      <button class="sync" id="syncBadge" onclick="PZ.refresh()"><span class="dot"></span><span id="badgeTxt">⚡ 동기화 확인 중</span></button>
+    </div>
   </div>
 
   <div class="nav" id="nav">
@@ -828,7 +835,20 @@
   var CAMP_HEAD='캠페인번호,캠페인명,광고주,채널,상태,모집,선정,미션완료,생성일,매출(원),포인트수익(원)';
 
   /* ── 전역 API ── */
+  /* ── 🌓 다크모드 (localStorage — 컴퓨터별 개인 설정) ── */
+  function applyTheme(){
+    var dark=false; try{ dark = localStorage.getItem('pz_theme')==='dark'; }catch(e){}
+    document.documentElement.classList.toggle('pz-dark', dark);
+    var b=document.getElementById('themeBtn'); if(b) b.textContent = dark? '☀️ 밝게' : '🌙 어둡게';
+  }
+  applyTheme();
+
   window.PZ = {
+    theme: function(){
+      var dark = !document.documentElement.classList.contains('pz-dark');
+      try{ localStorage.setItem('pz_theme', dark? 'dark':'light'); }catch(e){}
+      applyTheme();
+    },
     refresh: function(){ refresh(true); },
     preset: function(p){ PERIOD.preset=p; resetOpen(); render(); },
     applyRange: function(){ var a=document.getElementById('dFrom').value, b=document.getElementById('dTo').value; if(!a||!b||a>b) return; PERIOD={preset:'custom',from:a,to:b}; resetOpen(); render(); },
@@ -946,6 +966,6 @@
   };
 })();
 </script>
-<script src="pointail-adminpanel.js?v=2" defer></script>
+<script src="pointail-adminpanel.js?v=3" defer></script>
 </body>
 </html>
