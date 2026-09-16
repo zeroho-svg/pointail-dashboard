@@ -6545,9 +6545,18 @@ window.__pointailInitApp = function() {
           }
           return origFetch.call(window, input, init).then(function (r) {
             if (r.status === 401) {
-              console.warn('[Pointail Auth] Worker 401 — 세션 만료, 재로그인 필요');
-              try { localStorage.removeItem(AUTH_CONFIG.STORAGE_KEY); } catch (e) {}
-              location.reload();
+              // 세션이 있을 때만(=만료/무효 토큰) 세션을 비우고 1회 재로그인 유도.
+              // 로그인 전 백그라운드 호출의 401은 무시 — 무한 새로고침 방지.
+              if (s) {
+                console.warn('[Pointail Auth] Worker 401 — 세션 만료, 재로그인 필요');
+                try { localStorage.removeItem(AUTH_CONFIG.STORAGE_KEY); } catch (e) {}
+                var last = 0;
+                try { last = +sessionStorage.getItem('pt_rl_ts') || 0; } catch (e) {}
+                if (Date.now() - last > 15000) {
+                  try { sessionStorage.setItem('pt_rl_ts', String(Date.now())); } catch (e) {}
+                  location.reload();
+                }
+              }
             }
             return r;
           });

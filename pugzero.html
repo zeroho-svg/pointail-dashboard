@@ -332,7 +332,12 @@
     var tk = authTk();
     if(tk){ opts.headers = Object.assign({}, opts.headers||{}, { 'Authorization': 'Bearer '+tk }); }
     return fetch(WORKER+path, opts).then(function(r){
-      if(r.status===401){ try{ localStorage.removeItem('pz_auth_user'); }catch(e){} location.reload(); throw new Error('unauthorized'); }
+      if(r.status===401 && tk){  /* 토큰이 있었는데 401 = 만료/무효 → 1회 재로그인 (무한 새로고침 방지 가드) */
+        try{ localStorage.removeItem('pz_auth_user'); }catch(e){}
+        var last=0; try{ last=+sessionStorage.getItem('pz_rl_ts')||0; }catch(e){}
+        if(Date.now()-last>15000){ try{ sessionStorage.setItem('pz_rl_ts', String(Date.now())); }catch(e){} location.reload(); }
+        throw new Error('unauthorized');
+      }
       return r;
     });
   }
