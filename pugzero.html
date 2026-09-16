@@ -1,314 +1,802 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="ko">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>퍼그제로 통합 대시보드 — 매출·마케팅 비용</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>퍼그제로 통합 대시보드</title>
+<script src="https://accounts.google.com/gsi/client" defer></script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <style>
-  :root{color-scheme:only light}
-  *{box-sizing:border-box;margin:0;padding:0}
-  body{font-family:'Pretendard Variable',Pretendard,'Noto Sans KR',sans-serif;background:#f2f4f7;color:#1a1f29;padding:22px clamp(14px,2.5vw,28px);min-height:100vh}
-  .wrap{max-width:1440px;margin:0 auto}
-  .hd{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:16px}
-  .hd h1{font-size:21px;font-weight:800}
-  .hd .sub{font-size:12px;color:#5b6472;margin-top:4px}
-  .badge{display:inline-flex;align-items:center;gap:7px;background:#fff;border:1px solid #e5e8ee;border-radius:9px;padding:8px 14px;font-size:12px;font-weight:700;color:#128a3a;cursor:pointer}
-  .badge .dot{width:8px;height:8px;border-radius:50%;background:#128a3a}
-  .badge.stale{color:#b45309}.badge.stale .dot{background:#b45309}
-  .toolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
-  .pill{font-size:12px;font-weight:700;padding:6px 14px;border-radius:99px;border:1.5px solid #e5e8ee;background:#fff;color:#5b6472;cursor:pointer}
-  .pill.on{background:#111827;color:#fff;border-color:#111827}
-  .row{display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap}
-  .card{background:#fff;border:1px solid #eceff3;border-radius:13px;padding:16px 18px;flex:1;min-width:200px}
-  .k .lb{font-size:12px;color:#5b6472}
-  .k .v{font-size:25px;font-weight:800;margin-top:4px}
-  .k .v small{font-size:14px;color:#8a94a6;font-weight:600}
-  .k .s{font-size:11.5px;color:#6b7484;margin-top:4px}
-  .tt{font-size:14px;font-weight:800;margin-bottom:4px}
-  .td{font-size:11.5px;color:#6b7484;margin-bottom:12px}
-  .grid2{display:grid;grid-template-columns:1.5fr 1fr;gap:12px;margin-bottom:14px}
-  .grid11{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
-  @media(max-width:1050px){.grid2,.grid11{grid-template-columns:1fr}}
-  .chart{display:flex;align-items:flex-end;gap:10px;height:205px;padding:24px 6px 0;overflow-x:auto}
-  .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;min-width:44px;cursor:default}
-  .col .amt{font-size:11px;font-weight:800;color:#185fa5;white-space:nowrap}
-  .col .bar{width:70%;max-width:52px;background:linear-gradient(180deg,#3b82d6,#185fa5);border-radius:6px 6px 0 0}
-  .col .lbl{font-size:11.5px;color:#5b6472;font-weight:600;border-top:1px solid #e5e8ee;width:100%;text-align:center;padding-top:4px;white-space:nowrap}
-  .col .cnt{font-size:10px;color:#8a94a6;white-space:nowrap}
-  .hrow{display:flex;align-items:center;gap:10px;margin-bottom:9px;font-size:12.5px}
-  .hrow .nm{width:110px;font-weight:700;color:#3f4754;flex:0 0 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .hrow .trk{flex:1;height:15px;background:#f0f2f6;border-radius:5px;overflow:hidden}
-  .hrow .fill{height:100%;border-radius:5px}
-  .hrow .val{width:150px;text-align:right;font-weight:800;flex:0 0 auto;font-size:12px}
-  .hrow .pc{color:#8a94a6;font-weight:500;font-size:10.5px}
-  table{width:100%;border-collapse:collapse;font-size:12.5px}
-  th{background:#f7f8fa;color:#5b6472;font-size:11.5px;padding:8px 10px;text-align:right;border-bottom:1px solid #e5e8ee;white-space:nowrap}
-  td{padding:7px 10px;text-align:right;border-bottom:1px solid #f2f4f7;white-space:nowrap}
+  :root{
+    color-scheme: only light;
+    --bg:#f5f6f8; --card:#fff; --line:#e6e8ee; --ink:#1a1f29; --ink2:#5b6472; --mut:#8a94a6;
+    --blue:#2563eb; --amber:#e8871e; --green:#12805c; --red:#c0392b; --violet:#6b46c1;
+    --r:14px; --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);font:14px/1.55 "Pretendard Variable",Pretendard,-apple-system,sans-serif;padding:20px 22px 60px}
+  .wrap{max-width:1280px;margin:0 auto}
+  h1{font-size:20px;margin:0}
+  .sub{color:var(--mut);font-size:12px;margin-top:3px}
+  .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px;gap:10px;flex-wrap:wrap}
+  .sync{background:#eefaf3;border:1px solid #bfe9d2;color:#12805c;border-radius:99px;padding:6px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit}
+  .sync .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:#16a34a;margin-right:6px}
+  .sync.stale{background:#fdf3e4;border-color:#f3ddb5;color:#b45309}
+  .sync.stale .dot{background:#d97706}
+
+  .nav{display:flex;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:6px;box-shadow:var(--shadow);position:sticky;top:8px;z-index:50;flex-wrap:wrap}
+  .nav button{border:none;background:none;font:inherit;font-weight:600;color:var(--ink2);padding:9px 16px;border-radius:10px;cursor:pointer}
+  .nav button.on{background:var(--ink);color:#fff}
+
+  .period{display:flex;align-items:center;gap:8px;margin:12px 0 16px;flex-wrap:wrap}
+  .seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:4px;box-shadow:var(--shadow);flex-wrap:wrap}
+  .seg button{border:none;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--ink2);padding:7px 14px;border-radius:8px;cursor:pointer}
+  .seg button.on{background:#eaf1fe;color:var(--blue)}
+  .range{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:7px 12px;font-size:13px;box-shadow:var(--shadow);flex-wrap:wrap}
+  .range input{border:1px solid var(--line);border-radius:7px;padding:4px 8px;font:inherit;font-size:12.5px;color:var(--ink)}
+  .period .note{font-size:12px;color:var(--mut)}
+
+  .row{display:grid;gap:14px;margin-bottom:14px}
+  .k5{grid-template-columns:repeat(5,1fr)} .k2{grid-template-columns:1.5fr 1fr} .k2e{grid-template-columns:1fr 1fr}
+  @media(max-width:1000px){.k5{grid-template-columns:repeat(2,1fr)}.k2,.k2e{grid-template-columns:1fr}}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow)}
+  .card h3{margin:0 0 3px;font-size:15px}
+  .td{font-size:12px;color:var(--mut);margin-bottom:14px}
+  .lb{font-size:12.5px;color:var(--ink2);font-weight:600}
+  .v{font-size:24px;font-weight:800;letter-spacing:-.3px;margin:5px 0 3px;font-variant-numeric:tabular-nums}
+  .s{font-size:12px;color:var(--mut)}
+  .up{color:#12805c;font-weight:700} .dn{color:#c0392b;font-weight:700}
+  .hero{background:linear-gradient(135deg,#0e9f8a,#1673c9);border:none;color:#fff}
+  .hero .lb,.hero .s{color:rgba(255,255,255,.85)} .hero .v{color:#fff}
+
+  .chart{display:flex;align-items:flex-end;gap:10px;height:200px;padding-top:26px;overflow-x:auto}
+  .mcol{flex:1;min-width:64px;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:default}
+  .bars{display:flex;align-items:flex-end;gap:2px;height:150px;width:100%;justify-content:center}
+  .b{width:15px;border-radius:4px 4px 0 0;min-height:0}
+  .b.rev{background:var(--blue)} .b.cost{background:var(--amber)} .b.prf{background:var(--green)}
+  .b.prf.neg{background:#e2b5ad}
+  .mlbl{font-size:11.5px;color:var(--ink2);font-weight:600;white-space:nowrap}
+  .mamt{font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .legend{display:flex;gap:16px;font-size:12px;color:var(--ink2);margin-top:10px;flex-wrap:wrap}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+
+  .pipe{display:flex;gap:8px;align-items:stretch;flex-wrap:wrap}
+  .stage{flex:1;min-width:86px;border:1px solid var(--line);border-radius:12px;padding:12px 12px 10px;position:relative;background:#fafbfc;cursor:pointer}
+  .stage b{display:block;font-size:19px;font-variant-numeric:tabular-nums}
+  .stage span{font-size:11.5px;color:var(--ink2);font-weight:600}
+  .stage .pct{font-size:11px;color:var(--mut)}
+  .stage::after{content:"›";position:absolute;right:-9px;top:38%;color:#c3c9d4;font-size:15px;font-weight:700}
+  .stage:last-of-type::after{content:""}
+  .stage.hot{background:#eaf1fe;border-color:#c6d8f9} .stage.done{background:#eefaf3;border-color:#bfe9d2}
+  .cancel{border:1px dashed #e2b5ad;background:#fdf3f1;border-radius:12px;padding:12px;min-width:100px;cursor:pointer}
+  .cancel b{font-size:19px;color:var(--red)} .cancel span{font-size:11.5px;color:var(--ink2);font-weight:600}
+  .flowbar{display:flex;height:10px;border-radius:6px;overflow:hidden;gap:2px;margin-top:14px;background:var(--bg)}
+
+  .hrow{display:flex;align-items:center;gap:10px;margin:9px 0}
+  .hrow .nm{width:86px;font-size:12.5px;font-weight:600;color:var(--ink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .trk{flex:1;height:12px;background:#eef0f4;border-radius:6px;overflow:hidden}
+  .fill{height:100%;border-radius:6px}
+  .val{width:158px;text-align:right;font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .pc{color:var(--mut);font-weight:500;font-size:11.5px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{font-size:11.5px;color:var(--mut);text-align:right;padding:8px 10px;border-bottom:1px solid var(--line);font-weight:600;white-space:nowrap}
   th:first-child,td:first-child{text-align:left}
-  tbody tr:hover td{background:#f7f8fa}
-  .pos{color:#128a3a;font-weight:700}.neg{color:#c0392b;font-weight:700}.mut{color:#8a94a6}
-  .tag{display:inline-block;font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;vertical-align:1px}
-  .tag.ex{background:#fef3e2;color:#b45309}
-  .tag.auto{background:#e7f6ec;color:#0f6e56}
-  .mini{display:flex;gap:9px;flex-wrap:wrap}
-  .mini .m{flex:1;min-width:100px;background:#f7f8fa;border-radius:10px;padding:11px 13px}
-  .mini .m .l{font-size:11px;color:#6b7484;white-space:nowrap}
-  .mini .m .n{font-size:18px;font-weight:800;margin-top:2px}
-  .note{font-size:11px;color:#8a94a6;margin-top:10px}
-  .btn{font-size:12px;font-weight:700;padding:7px 14px;border-radius:8px;border:1px solid #e5e8ee;background:#fff;color:#3f4754;cursor:pointer}
-  .btn.primary{background:#185fa5;border-color:#185fa5;color:#fff}
-  input.ci{width:100px;padding:5px 8px;border:1px solid #dbe0e8;border-radius:7px;font-size:12.5px;text-align:right;font-family:inherit}
-  #tip{position:fixed;z-index:99999;display:none;pointer-events:none;background:rgba(23,27,34,.96);color:#fff;border-radius:10px;padding:10px 13px;font-size:12px;line-height:1.7;box-shadow:0 6px 20px rgba(0,0,0,.28);white-space:nowrap}
-  #loading{text-align:center;padding:80px 20px;color:#8a94a6;font-size:14px}
-  .scroll{overflow:auto;max-height:420px}
-  .profit{background:linear-gradient(135deg,#0e9f8a,#1673c9);color:#fff;border:none}
-  .profit .l,.profit .n{color:#fff}
+  td{padding:9px 10px;border-bottom:1px solid #f0f2f6;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  tr.sum td{background:#f8f9fb;font-weight:800;border-top:2px solid var(--line)}
+  th.sortable{cursor:pointer} th.sortable:hover{color:var(--blue)}
+  .neg{color:var(--red);font-weight:700} .pos{color:#12805c;font-weight:700}
+  .mutd{color:var(--mut)}
+  .badge{display:inline-block;font-size:11px;font-weight:700;border-radius:99px;padding:2.5px 9px}
+  .bg-blue{background:#eaf1fe;color:#1d4ed8} .bg-green{background:#eefaf3;color:#12805c}
+  .bg-gray{background:#eef0f4;color:#5b6472} .bg-red{background:#fdf0ee;color:#c0392b} .bg-amber{background:#fdf3e4;color:#b45309}
+  .search{border:1px solid var(--line);border-radius:9px;padding:8px 12px;font:inherit;font-size:13px;width:230px}
+  .toolrow{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:10px;flex-wrap:wrap}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);background:#fff;border-radius:99px;padding:5px 12px;font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer}
+  .chip.on{background:var(--ink);border-color:var(--ink);color:#fff}
+  .btn{border:none;border-radius:9px;background:var(--blue);color:#fff;font:inherit;font-weight:700;font-size:13px;padding:9px 16px;cursor:pointer}
+  .btn.ghost{background:#fff;color:var(--ink2);border:1px solid var(--line)}
+  .btn.sm{padding:3px 10px;font-size:12px}
+  input.ci{width:104px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px;text-align:right}
+  input.itemnm{width:170px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:12.5px;text-align:left}
+  .tag{font-size:10.5px;background:#eef0f4;color:#5b6472;border-radius:5px;padding:2px 7px;font-weight:700;vertical-align:2px;margin-left:6px}
+  .tag.auto{background:#eefaf3;color:#12805c} .tag.hand{background:#fdf3e4;color:#b45309}
+  .tab{display:none} .tab.on{display:block}
+  .more{font-size:12px;color:var(--blue);font-weight:600;margin-top:8px;cursor:pointer;display:inline-block}
+  .scroll{overflow-x:auto}
+
+  tr.clickable{cursor:pointer}
+  tr.clickable:hover td{background:#f6f8fc}
+  tr.clickable.open td{background:#eaf1fe}
+  td .caret{display:inline-block;color:var(--mut);font-size:11px;margin-right:6px}
+  tr.open .caret{transform:rotate(90deg);color:var(--blue)}
+  tr.detail{display:none}
+  tr.detail.open{display:table-row}
+  tr.detail>td{padding:0;background:#fafbfd;border-bottom:2px solid var(--line);white-space:normal}
+  .banner{padding:16px 18px 18px;border-left:3px solid var(--blue)}
+  .banner h4{margin:0 0 2px;font-size:13.5px}
+  .banner .bd{font-size:11.5px;color:var(--mut);margin-bottom:12px}
+  .bchips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .bchip{background:#fff;border:1px solid var(--line);border-radius:10px;padding:8px 14px}
+  .bchip .l{font-size:10.5px;color:var(--mut);font-weight:600}
+  .bchip .n{font-size:15px;font-weight:800;font-variant-numeric:tabular-nums}
+  .bchip.gr{background:#eefaf3;border-color:#bfe9d2}
+  .banner table{font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .banner th{background:#f8f9fb;padding:7px 10px}
+  .banner td{padding:7px 10px}
+  .bgrid{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;align-items:start}
+  @media(max-width:1000px){.bgrid{grid-template-columns:1fr}}
+
+  #tip{position:fixed;display:none;z-index:99;background:#1a1f29;color:#fff;border-radius:9px;padding:9px 12px;font-size:12px;line-height:1.6;pointer-events:none;box-shadow:0 6px 18px rgba(0,0,0,.25);max-width:270px}
+  #loading{text-align:center;color:var(--mut);padding:80px 0;font-size:14px}
+
+  /* 🔐 인증 */
+  #auth-card{background:#fff;border-radius:18px;padding:44px 48px;box-shadow:0 8px 30px rgba(16,24,40,.1);text-align:center;max-width:380px}
+  .auth-logo{font-size:20px;font-weight:800;margin-bottom:6px}
+  .auth-sub{font-size:13px;color:#5b6472;margin-bottom:18px;line-height:1.6}
+  .auth-divider{height:1px;background:#e6e8ee;margin:18px 0}
+  #auth-status{font-size:12px;color:#8a94a6;margin-top:14px;white-space:pre-line;min-height:18px}
+  #auth-status.error{color:#c0392b;font-weight:600}
+  .auth-domain-note{font-size:12px;color:#8a94a6;margin-top:14px}
+  #auth-btn-wrap{display:flex;justify-content:center}
+  #auth-user-bar{display:none;position:fixed;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);padding:7px 20px;z-index:60;font-size:12px;align-items:center;justify-content:flex-end;gap:12px}
+  #auth-user-bar.show{display:flex}
+  #auth-user-bar img{width:22px;height:22px;border-radius:50%;vertical-align:middle;margin-right:6px}
+  #auth-user-bar button{border:1px solid var(--line);background:#fff;border-radius:7px;font:inherit;font-size:11.5px;color:var(--ink2);padding:4px 10px;cursor:pointer}
+  .app.auth-hidden{display:none}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="hd">
-    <div>
-      <h1>🐶 퍼그제로 통합 대시보드 <span style="color:#5b6472;font-weight:600;font-size:15px">— 매출 · 마케팅 비용</span></h1>
-      <div class="sub">데이터: 퍼그제로 캠페인 (백오피스, PUG_ZERO만) — Worker 자동 수집 · <span id="syncTxt">동기화 확인 중…</span></div>
-    </div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <button class="badge" id="syncBadge" onclick="PZ.refresh()"><span class="dot"></span> <span id="badgeTxt">⚡ 동기화 확인 중</span></button>
-    </div>
-  </div>
-  <div class="toolbar" id="yearBar"></div>
-  <div id="loading">⏳ 데이터를 불러오는 중입니다…</div>
-  <div id="app" style="display:none">
-    <div class="row" id="kpi"></div>
-    <div class="grid2">
-      <div class="card">
-        <div class="tt">📊 월별 매출 추이 <span class="tag auto">자동</span></div>
-        <div class="td">매출 = 결제금액 × 모집인원 (취소 제외) · 캠페인 생성일 기준 · 마우스를 올리면 상세</div>
-        <div class="chart" id="mchart"></div>
-      </div>
-      <div class="card">
-        <div class="tt">🛒 채널별 매출 <span class="tag auto">자동</span></div>
-        <div class="td" id="chTd">선택 연도 · 취소 제외</div>
-        <div id="chlist"></div>
-        <div class="note" id="chNote"></div>
-      </div>
-    </div>
-    <div class="grid11">
-      <div class="card">
-        <div class="tt">💸 마케팅 비용 관리 <span class="tag ex">수기 입력</span></div>
-        <div class="td">월별 매체비·제작비를 입력하고 저장 — 매출과 자동 대비(비용률·ROAS) · 모든 PC에서 공유 저장</div>
-        <div class="scroll"><table id="costTbl"></table></div>
-        <div style="display:flex;gap:8px;margin-top:10px;align-items:center">
-          <button class="btn primary" onclick="PZ.saveCosts()">💾 비용 저장</button>
-          <span id="costMsg" class="note" style="margin-top:0"></span>
-        </div>
-      </div>
-      <div class="card">
-        <div class="tt">💰 수익 요약 · 진행 현황 <span class="tag auto">자동</span></div>
-        <div class="td">성과 대시보드와 동일 공식 — 수익 = 선정수 × (결제금액−보상포인트), 카드 수수료 3.2%</div>
-        <div class="mini" id="profitMini"></div>
-        <div class="mini" id="stateMini" style="margin-top:10px"></div>
-        <div class="note">진행 현황은 선택 연도 캠페인 상태 기준 · 예상 수익 = 모집수 전원 완료 가정</div>
-      </div>
-    </div>
-    <div class="card" style="margin-bottom:14px">
-      <div class="tt">🏢 광고주별 매출 TOP 30 <span class="tag auto">자동</span></div>
-      <div class="td" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><span>선택 연도 · 취소 제외 · 법인명 기준</span><button class="btn" onclick="PZ.csvCorp()">⬇ CSV (전체)</button></div>
-      <div class="scroll"><table id="corpTbl"></table></div>
-    </div>
-    <div style="text-align:center;font-size:11px;color:#8a94a6;padding:6px 0 20px">
-      퍼그제로(PUG_ZERO) 캠페인만 집계 · 매출 = 결제금액×모집인원 (캠페인취소·등록취소 제외) · 월 귀속 = 캠페인 생성일 · 3시간마다 자동 동기화
-    </div>
+
+<!-- 🔐 로그인 화면 (포인테일과 동일 패턴: inline 100vh + 최상위 z-index) -->
+<div id="auth-screen" style="position:fixed !important;top:0 !important;left:0 !important;right:0 !important;bottom:0 !important;width:100vw !important;height:100vh !important;min-height:100vh !important;z-index:2147483647 !important;background:#f5f6f8 !important;display:flex !important;align-items:center !important;justify-content:center !important;flex-direction:column !important;padding:20px !important;box-sizing:border-box !important;overflow:auto !important;margin:0 !important;">
+  <div id="auth-card">
+    <div class="auth-logo">🐶 퍼그제로 통합 대시보드</div>
+    <div class="auth-sub">매출 · 수익 · 마케팅 비용<br>로그인 후 이용해주세요</div>
+    <div class="auth-divider"></div>
+    <div id="auth-btn-wrap"></div>
+    <div id="auth-status">로그인 버튼을 불러오는 중...</div>
+    <div class="auth-domain-note"><strong>@storelink.io</strong> 계정으로만 로그인 가능합니다</div>
   </div>
 </div>
+
+<div id="auth-user-bar">
+  <span><img id="auth-user-pic" src="" alt=""><span id="auth-user-email"></span></span>
+  <button onclick="authLogout()">로그아웃</button>
+</div>
+
+<div class="app auth-hidden">
+<div class="wrap">
+
+  <div class="hdr">
+    <div>
+      <h1>🐶 퍼그제로 통합 대시보드</h1>
+      <div class="sub">퍼그제로 캠페인(PUG_ZERO) · Worker 자동 수집 · <span id="syncTxt">동기화 확인 중…</span></div>
+    </div>
+    <button class="sync" id="syncBadge" onclick="PZ.refresh()"><span class="dot"></span><span id="badgeTxt">⚡ 동기화 확인 중</span></button>
+  </div>
+
+  <div class="nav" id="nav">
+    <button class="on" data-t="home">🏠 홈</button>
+    <button data-t="rev">💰 매출·수익</button>
+    <button data-t="adv">🏢 광고주</button>
+    <button data-t="camp">🚀 캠페인 현황</button>
+    <button data-t="cost">💸 비용 관리</button>
+  </div>
+
+  <div class="period">
+    <div class="seg" id="segBar"></div>
+    <div class="range">📅 기간 지정
+      <input type="date" id="dFrom"> ~ <input type="date" id="dTo">
+      <button class="btn sm" onclick="PZ.applyRange()">적용</button>
+    </div>
+    <span class="note" id="periodNote"></span>
+  </div>
+
+  <div id="loading">⏳ 데이터를 불러오는 중입니다…</div>
+  <div id="tabs" style="display:none">
+    <div class="tab on" id="tab-home"></div>
+    <div class="tab" id="tab-rev"></div>
+    <div class="tab" id="tab-adv"></div>
+    <div class="tab" id="tab-camp"></div>
+    <div class="tab" id="tab-cost"></div>
+  </div>
+
+</div>
+</div>
 <div id="tip"></div>
+
 <script>
+/* ═══════════ 🔐 인증 (@storelink.io 전용) ═══════════ */
+(function(){
+  'use strict';
+  var CFG = {
+    CLIENT_ID: '412852365677-78te0hmm3a2tgccesb5rqbiputqcc5ig.apps.googleusercontent.com',
+    DOMAIN: 'storelink.io', KEY: 'pz_auth_user', HOURS: 12
+  };
+  function setStatus(m, err){ var el=document.getElementById('auth-status'); if(!el) return; el.textContent=m; el.classList.toggle('error', !!err); }
+  function decodeJwt(t){ try{ var b=t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
+    return JSON.parse(decodeURIComponent(atob(b).split('').map(function(c){return '%'+('00'+c.charCodeAt(0).toString(16)).slice(-2);}).join(''))); }catch(e){ return null; } }
+  function save(u){ var s={email:u.email,name:u.name,picture:u.picture,expiresAt:Date.now()+CFG.HOURS*3600*1000};
+    try{ localStorage.setItem(CFG.KEY, JSON.stringify(s)); }catch(e){} return s; }
+  function get(){ try{ var s=JSON.parse(localStorage.getItem(CFG.KEY)||'null'); if(!s) return null;
+    if(Date.now()>s.expiresAt){ localStorage.removeItem(CFG.KEY); return null; } return s; }catch(e){ return null; } }
+  function showApp(s){
+    var sc=document.getElementById('auth-screen'), app=document.querySelector('.app'), bar=document.getElementById('auth-user-bar');
+    if(sc) sc.style.display='none';
+    if(app){ app.classList.remove('auth-hidden'); app.style.display=''; }
+    if(bar){ document.getElementById('auth-user-pic').src=s.picture||''; document.getElementById('auth-user-email').textContent=s.email; bar.classList.add('show'); }
+    setTimeout(function(){ if(typeof window.__pzInitApp==='function') window.__pzInitApp(); }, 50);
+  }
+  window.authLogout = function(){ try{ localStorage.removeItem(CFG.KEY); }catch(e){}
+    if(window.google&&google.accounts&&google.accounts.id){ try{ google.accounts.id.disableAutoSelect(); }catch(e){} } location.reload(); };
+  window.handleGoogleSignIn = function(resp){
+    setStatus('로그인 확인 중...');
+    var u = decodeJwt(resp.credential);
+    if(!u){ setStatus('로그인 토큰 해석에 실패했습니다. 다시 시도해주세요.', true); return; }
+    if(!u.email || !u.email.endsWith('@'+CFG.DOMAIN)){
+      setStatus('@'+CFG.DOMAIN+' 계정만 로그인 가능합니다.\n현재 계정: '+(u.email||'알 수 없음'), true);
+      if(window.google&&google.accounts&&google.accounts.id){ try{ google.accounts.id.disableAutoSelect(); }catch(e){} }
+      return;
+    }
+    if(u.email_verified===false){ setStatus('이메일 인증이 완료되지 않은 계정입니다.', true); return; }
+    showApp(save(u));
+  };
+  function initGsi(){
+    if(!window.google||!google.accounts||!google.accounts.id) return false;
+    try{
+      google.accounts.id.initialize({ client_id:CFG.CLIENT_ID, callback:window.handleGoogleSignIn, auto_select:false, cancel_on_tap_outside:false, hd:CFG.DOMAIN, ux_mode:'popup' });
+      var w=document.getElementById('auth-btn-wrap');
+      if(w){ w.innerHTML=''; google.accounts.id.renderButton(w,{theme:'outline',size:'large',type:'standard',text:'signin_with',shape:'rectangular',logo_alignment:'left',width:280}); }
+      setStatus(''); return true;
+    }catch(e){ setStatus('Google 로그인 초기화 실패: '+e.message, true); return false; }
+  }
+  (function init(){
+    var s=get();
+    if(s){ showApp(s); return; }
+    setStatus('Google 로그인 준비 중...');
+    var n=0, iv=setInterval(function(){ n++; if(initGsi()||n>100) clearInterval(iv); if(n>100) setStatus('Google 로그인을 불러오지 못했습니다. 새로고침 해주세요.', true); }, 100);
+  })();
+})();
+
+/* ═══════════ 📊 대시보드 앱 ═══════════ */
 (function () {
   'use strict';
   var WORKER = 'https://pointail-api.zeroho.workers.dev/';
   var ROWS = [], COSTS = {}, META = {};
-  var YEAR = String(new Date().getFullYear());
-  var FEE = 0.032;   // 카드 수수료 3.2% (성과 대시보드와 동일)
-  var CH_COLOR = { '쿠팡':'#c0392b', '네이버':'#128a3a', '올리브영':'#0f6e56', '스마트스토어':'#128a3a', '자사몰':'#6b46c1', '오늘의집':'#0e7490', '무신사':'#1a1f29', '지그재그':'#c0398d', '에이블리':'#d85a30', '11번가':'#b45309', 'G마켓':'#185fa5', '기타':'#8a94a6' };
+  var FEE = 0.032;
   var CANCEL = { '캠페인취소':1, '등록취소':1 };
-  function f(n){ return (Math.round(n)||0).toLocaleString('ko-KR'); }
-  function eok(n){ if(Math.abs(n)>=1e8){ var v=n/1e8; return (v>=10? v.toFixed(1): v.toFixed(2))+'억'; } return f(n/1e4)+'만'; }
-  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-  function ym(r){ var d=(r.created||'').slice(0,7); return /^\d{4}-\d{2}$/.test(d)? d : ''; }
-  function sales(r){ return (r.pay||0) * (r.mo||0); }                       // 매출(광고주 결제)
-  function profit(r){ return r.rev || ((r.sel||0) * Math.max(0,(r.pay||0)-(r.point||0))); }  // 실현 포인트 수익
-  function eProfit(r){ return (r.mo||0) * Math.max(0,(r.pay||0)-(r.point||0)); }             // 예상 수익
+  var CH_COLOR = { '쿠팡':'#c0392b','네이버쇼핑':'#128a3a','네이버':'#128a3a','스마트스토어':'#128a3a','올리브영':'#0f6e56','자사몰':'#6b46c1','오늘의집':'#0e7490','무신사':'#1a1f29','지그재그':'#c0398d','에이블리':'#d85a30','11번가':'#b45309','G마켓':'#185fa5','리워드':'#8a94a6','기타':'#8a94a6' };
+  var ITEM_COLORS = ['#e8871e','#b45309','#6b46c1','#0e7490','#185fa5','#c0398d','#12805c','#8a94a6'];
+  var DEFAULT_ITEMS = [{id:'media',name:'매체비(광고)'},{id:'prod',name:'제작·기타'}];
 
+  /* ── 기간 상태 ── */
+  var PERIOD = { preset:'year', from:null, to:null };
+  var TAB='home', STFILTER='', ADVQ='', ADVSORT={k:'sales',d:-1}, ADVLIMIT=30, CAMPLIMIT=50, OPENM={}, OPENCH={}, OPENADV={};
+
+  function f(n){ return (Math.round(n)||0).toLocaleString('ko-KR'); }
+  function eok(n){ var a=Math.abs(n); if(a>=1e8){ var v=n/1e8; return (a>=10e8? v.toFixed(1): v.toFixed(2))+'억'; } return f(n/1e4)+'만'; }
+  function esc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function d10(r){ return (r.created||'').slice(0,10); }
+  function ym(r){ var d=(r.created||'').slice(0,7); return /^\d{4}-\d{2}$/.test(d)? d : ''; }
+  function sales(r){ return (r.pay||0)*(r.mo||0); }
+  function profit(r){ return r.rev || ((r.sel||0)*Math.max(0,(r.pay||0)-(r.point||0))); }
+  function isNew(){ return ROWS.length && ROWS[0].created !== undefined; }
+
+  /* ── 기간 계산 ── */
+  function today(){ return new Date().toISOString().slice(0,10); }
+  function presetRange(p){
+    var now=new Date(), y=now.getFullYear(), m=now.getMonth();
+    if(p==='month'){ return [new Date(y,m,1).toISOString().slice(0,10), today()]; }
+    if(p==='3m'){ var s=new Date(y,m-2,1); return [s.toISOString().slice(0,10), today()]; }
+    if(p==='year'){ return [y+'-01-01', today()]; }
+    if(p==='lastyear'){ return [(y-1)+'-01-01', (y-1)+'-12-31']; }
+    if(p==='all'){ return ['2000-01-01', today()]; }
+    return [PERIOD.from||'2000-01-01', PERIOD.to||today()];
+  }
+  function curRange(){ return PERIOD.preset==='custom'? [PERIOD.from, PERIOD.to] : presetRange(PERIOD.preset); }
+  function inR(r){ var d=d10(r), rg=curRange(); return d && d>=rg[0] && d<=rg[1]; }
+  function monthsInRange(){
+    var rg=curRange(), out=[], s=rg[0].slice(0,7), e=rg[1].slice(0,7);
+    var y=+s.slice(0,4), m=+s.slice(5,7);
+    while(true){ var k=y+'-'+('0'+m).slice(-2); out.push(k); if(k>=e) break; m++; if(m>12){m=1;y++;} if(out.length>60) break; }
+    return out;
+  }
+
+  /* ── 비용(항목 커스터마이징) ── */
+  function costItems(){
+    var it = COSTS.__items__;
+    if(!it || !it.length){ it = DEFAULT_ITEMS.map(function(x){return {id:x.id,name:x.name};}); }
+    return it;
+  }
+  function itemColor(i){ return ITEM_COLORS[i % ITEM_COLORS.length]; }
+  function monthCost(k){
+    var c=COSTS[k]||{}, t=0;
+    costItems().forEach(function(it){ t += (+c[it.id]||0); });
+    return t;
+  }
+  function rangeCost(){ var t=0; monthsInRange().forEach(function(k){ t+=monthCost(k); }); return t; }
+
+  /* ── 데이터 로드 ── */
   function load(cb){
     Promise.all([
       fetch(WORKER+'pz/snapshot?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json();}),
       fetch(WORKER+'pz/costs?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json();})
     ]).then(function(res){
-      ROWS = (res[0]&&res[0].rows)||[]; META = (res[0]&&res[0].meta)||{}; COSTS = res[1]||{};
+      ROWS=(res[0]&&res[0].rows)||[]; META=(res[0]&&res[0].meta)||{}; COSTS=res[1]||{};
       if(cb) cb();
     }).catch(function(e){
-      document.getElementById('loading').textContent = '⚠️ 데이터 로드 실패 — 새로고침 해주세요 ('+e.message+')';
+      var l=document.getElementById('loading'); if(l) l.textContent='⚠️ 데이터 로드 실패 — 새로고침 해주세요 ('+e.message+')';
     });
   }
-  function staleMs(){ return META.updatedAt ? (Date.now()-Date.parse(META.updatedAt)) : Infinity; }
-  function isNew(){ return ROWS.length && ROWS[0].created !== undefined; }   // 구(RevUp) 스냅샷 감지
+  function staleMs(){ return META.updatedAt? (Date.now()-Date.parse(META.updatedAt)) : Infinity; }
   function refresh(force){
-    var b=document.getElementById('badgeTxt'); b.textContent='⏳ 동기화 중…';
+    var b=document.getElementById('badgeTxt'); if(b) b.textContent='⏳ 동기화 중… (최대 2분)';
     fetch(WORKER+'pz/refresh?force='+(force?'1':'0'),{method:'POST'}).then(function(r){return r.json();})
       .then(function(){ load(render); })
-      .catch(function(){ b.textContent='⚠️ 동기화 실패'; });
+      .catch(function(){ if(b) b.textContent='⚠️ 동기화 실패'; });
   }
 
-  function render(){
-    if(!isNew()){ refresh(true); return; }   // 파트너스(구) 데이터가 남아있으면 강제 재수집
-    document.getElementById('loading').style.display='none';
-    document.getElementById('app').style.display='';
-    var up = META.updatedAt ? META.updatedAt.replace('T',' ').slice(0,16)+' UTC' : '없음';
-    document.getElementById('syncTxt').textContent = '마지막 동기화 '+up+' · 퍼그제로 캠페인 '+f(META.count||ROWS.length)+'건';
-    var stale = staleMs() > 3*3600*1000;
-    var badge=document.getElementById('syncBadge'); badge.className='badge'+(stale?' stale':'');
-    document.getElementById('badgeTxt').textContent = stale? '🔄 오래됨 — 눌러서 동기화' : '⚡ 최신 · '+f(META.count||ROWS.length)+'건';
-
-    var years={}; ROWS.forEach(function(r){ var m=ym(r); if(m) years[m.slice(0,4)]=1; });
-    var ylist=Object.keys(years).sort();
-    if(ylist.indexOf(YEAR)<0) YEAR=ylist[ylist.length-1]||YEAR;
-    document.getElementById('yearBar').innerHTML = ylist.map(function(y){
-      return '<button class="pill'+(y===YEAR?' on':'')+'" onclick="PZ.year(\''+y+'\')">'+y+'년</button>';
-    }).join('') + '<span style="font-size:12px;color:#8a94a6;margin-left:6px">기준: 캠페인 생성일</span>';
-
-    var yr = ROWS.filter(function(r){ return ym(r).slice(0,4)===YEAR; });
-    var yrOk = yr.filter(function(r){ return !CANCEL[r.state]; });
-    var thisM = new Date().toISOString().slice(0,7);
-    var mAgg={}, chAgg={}, corpAgg={};
-    var yTot=0, yProfit=0, yEProfit=0;
-    yrOk.forEach(function(r){
-      var s=sales(r), p=profit(r);
-      var m=ym(r); if(!mAgg[m]) mAgg[m]={n:0,sales:0,profit:0,mo:0,sel:0}; mAgg[m].n++; mAgg[m].sales+=s; mAgg[m].profit+=p; mAgg[m].mo+=r.mo; mAgg[m].sel+=r.sel;
-      var ch=r.chnnl||'기타'; if(!chAgg[ch]) chAgg[ch]={n:0,sales:0}; chAgg[ch].n++; chAgg[ch].sales+=s;
-      var c=r.corp||r.store||'(미입력)'; if(!corpAgg[c]) corpAgg[c]={n:0,sales:0}; corpAgg[c].n++; corpAgg[c].sales+=s;
-      yTot+=s; yProfit+=p; yEProfit+=eProfit(r);
+  /* ── 집계 ── */
+  function agg(){
+    var rows=ROWS.filter(inR), ok=rows.filter(function(r){return !CANCEL[r.state];});
+    var mAgg={}, chAgg={}, advAgg={}, st={};
+    var tot=0, prf=0;
+    rows.forEach(function(r){ st[r.state]=(st[r.state]||0)+1; });
+    ok.forEach(function(r){
+      var s=sales(r), p=profit(r), m=ym(r);
+      if(!mAgg[m]) mAgg[m]={n:0,sales:0,profit:0,mo:0,sel:0};
+      mAgg[m].n++; mAgg[m].sales+=s; mAgg[m].profit+=p; mAgg[m].mo+=(r.mo||0); mAgg[m].sel+=(r.sel||0);
+      var ch=r.chnnl||'기타';
+      if(!chAgg[ch]) chAgg[ch]={n:0,sales:0,profit:0,mo:0,sel:0,prog:0};
+      chAgg[ch].n++; chAgg[ch].sales+=s; chAgg[ch].profit+=p; chAgg[ch].mo+=(r.mo||0); chAgg[ch].sel+=(r.sel||0);
+      if(r.state==='모집중'||r.state==='추가모집') chAgg[ch].prog++;
+      tot+=s; prf+=p;
     });
-    var mNow = mAgg[thisM]||{n:0,sales:0,profit:0};
-    var prevM = (function(){ var d=new Date(); d.setMonth(d.getMonth()-1); return d.toISOString().slice(0,7); })();
-    var mPrev = mAgg[prevM]||{n:0,sales:0};
-    var yFee = yTot*FEE, yFinal = yProfit - yFee;
-
-    var cNow = COSTS[thisM]||{}; var cSum=(+cNow.media||0)+(+cNow.prod||0);
-    var roasNow = cSum>0 ? Math.round(mNow.sales/cSum*100) : null;
-
-    var st={}; yr.forEach(function(r){ st[r.state]=(st[r.state]||0)+1; });
-
-    document.getElementById('kpi').innerHTML =
-      kpi('📅','이번 달 매출 ('+thisM.slice(5,7).replace(/^0/,'')+'월)', eok(mNow.sales), f(mNow.n)+'건 · 전월 '+eok(mPrev.sales)+' ('+f(mPrev.n)+'건)', '#185fa5') +
-      kpi('📈', YEAR+'년 누적 매출', eok(yTot), f(yrOk.length)+'건 · 평균 결제 '+f(yrOk.length? yTot/Math.max(1,yrOk.reduce(function(a,r){return a+r.mo;},0)) :0)+'원/명', '#1a1f29') +
-      kpi('💎', YEAR+'년 최종 수익', eok(yFinal), '포인트 수익 '+eok(yProfit)+' − 수수료 '+eok(yFee)+' (3.2%)', '#0f6e56') +
-      kpi('💸','이번 달 마케팅 비용', cSum? eok(cSum) : '<span style="font-size:15px;color:#8a94a6">미입력</span>', cSum? ('비용률 '+(mNow.sales? (cSum/mNow.sales*100).toFixed(1):'-')+'% · ROAS '+f(roasNow)+'%') : '아래 표에서 입력하세요', '#b45309') +
-      kpi('🚀','진행 중', f((st['모집중']||0)+(st['추가모집']||0))+'<small>건</small>', '선정완료 '+f(st['선정완료']||0)+'건 · 종료 '+f(st['캠페인종료']||0)+'건', '#185fa5');
-
-    var maxV=1; for(var i=1;i<=12;i++){ var k=YEAR+'-'+('0'+i).slice(-2); if(mAgg[k]) maxV=Math.max(maxV,mAgg[k].sales); }
-    var bars='';
-    for(var i2=1;i2<=12;i2++){
-      var k2=YEAR+'-'+('0'+i2).slice(-2), v=mAgg[k2]||{n:0,sales:0};
-      var h=Math.max(v.sales? 3:0, Math.round(v.sales/maxV*145));
-      var cur = k2===thisM;
-      bars += '<div class="col" data-tt="'+k2+'"><div class="amt">'+(v.sales? eok(v.sales):'')+'</div>'+
-        '<div class="bar" style="height:'+h+'px'+(cur?';opacity:.55':'')+'"></div>'+
-        '<div class="lbl">'+i2+'월</div><div class="cnt">'+(v.n? f(v.n)+'건'+(cur?' · 진행':'') : '–')+'</div></div>';
-    }
-    document.getElementById('mchart').innerHTML = bars;
-    window.__mAgg = mAgg; window.__COSTS = COSTS;
-
-    var chArr=Object.keys(chAgg).map(function(k){return {k:k,v:chAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
-    var chMax=chArr.length? chArr[0].v.sales:1;
-    document.getElementById('chTd').textContent = YEAR+'년 · 취소 제외 · 캠페인 '+f(yrOk.length)+'건';
-    document.getElementById('chlist').innerHTML = chArr.slice(0,8).map(function(x){
-      var pct=yTot? Math.round(x.v.sales/yTot*100):0;
-      return '<div class="hrow"><span class="nm">'+esc(x.k)+'</span>'+
-        '<div class="trk"><div class="fill" style="width:'+Math.max(2,Math.round(x.v.sales/chMax*100))+'%;background:'+(CH_COLOR[x.k]||'#8a94a6')+'"></div></div>'+
-        '<span class="val">'+eok(x.v.sales)+' <span class="pc">'+pct+'% · '+f(x.v.n)+'건</span></span></div>';
-    }).join('');
-    document.getElementById('chNote').textContent = chArr.length>8? '외 '+(chArr.length-8)+'개 채널':'';
-
-    var crows='<tr><th>월</th><th>매출</th><th>매체비(원)</th><th>제작·기타(원)</th><th>합계</th><th>비용률</th><th>ROAS</th></tr>';
-    for(var i3=12;i3>=1;i3--){
-      var k3=YEAR+'-'+('0'+i3).slice(-2);
-      var mv=(mAgg[k3]||{sales:0}).sales, cv=COSTS[k3]||{};
-      var media=+cv.media||0, prod=+cv.prod||0, tot=media+prod;
-      if(!mv && !tot && k3>thisM) continue;
-      crows+='<tr><td><b>'+k3+'</b></td><td>'+(mv?eok(mv):'<span class="mut">–</span>')+'</td>'+
-        '<td><input class="ci" data-m="'+k3+'" data-f="media" value="'+(media||'')+'" placeholder="0"></td>'+
-        '<td><input class="ci" data-m="'+k3+'" data-f="prod" value="'+(prod||'')+'" placeholder="0"></td>'+
-        '<td><b>'+(tot?eok(tot):'–')+'</b></td>'+
-        '<td>'+(tot&&mv? '<span class="'+(tot/mv>0.1?'neg':'')+'">'+(tot/mv*100).toFixed(1)+'%</span>':'<span class="mut">–</span>')+'</td>'+
-        '<td>'+(tot&&mv? '<span class="pos">'+f(mv/tot*100)+'%</span>':'<span class="mut">–</span>')+'</td></tr>';
-    }
-    document.getElementById('costTbl').innerHTML = crows;
-
-    document.getElementById('profitMini').innerHTML =
-      mini('실현 포인트 수익', eok(yProfit),'#0f6e56') + mini('예상 수익(전원 완료)', eok(yEProfit),'#185fa5') +
-      mini('카드 수수료 3.2%', '-'+eok(yFee),'#c0392b') + '<div class="m profit"><div class="l">최종 수익 ('+YEAR+')</div><div class="n">'+eok(yFinal)+'</div></div>';
-    document.getElementById('stateMini').innerHTML =
-      mini('모집중', f((st['모집중']||0)+(st['추가모집']||0))+'건','#185fa5') + mini('선정완료', f(st['선정완료']||0)+'건','#0f6e56') +
-      mini('종료', f(st['캠페인종료']||0)+'건','#1a1f29') + mini('등록대기·완료', f((st['등록대기']||0)+(st['등록완료']||0))+'건','#6b7484') +
-      mini('취소', f((st['캠페인취소']||0)+(st['등록취소']||0))+'건','#8a94a6');
-
-    var ca=Object.keys(corpAgg).map(function(k){return {k:k,v:corpAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
-    window.__corpAll = ca;
-    document.getElementById('corpTbl').innerHTML = '<tr><th>#</th><th>광고주</th><th>캠페인</th><th>매출</th><th>비중</th></tr>' +
-      ca.slice(0,30).map(function(x,idx){ return '<tr><td class="mut">'+(idx+1)+'</td><td><b>'+esc(x.k)+'</b></td><td>'+f(x.v.n)+'건</td><td><b>'+f(x.v.sales/1e4)+'만원</b></td><td class="mut">'+(yTot? (x.v.sales/yTot*100).toFixed(1):0)+'%</td></tr>'; }).join('');
-
-    hookTip(mAgg);
+    rows.forEach(function(r){
+      var c=r.corp||r.store||'(미입력)';
+      if(!advAgg[c]) advAgg[c]={n:0,sales:0,prog:0,sel:0,close:0,cancel:0,moT:0,selT:0};
+      advAgg[c].n++;
+      if(CANCEL[r.state]){ advAgg[c].cancel++; return; }
+      advAgg[c].sales+=sales(r); advAgg[c].moT+=(r.mo||0); advAgg[c].selT+=(r.sel||0);
+      if(r.state==='모집중'||r.state==='추가모집') advAgg[c].prog++;
+      else if(r.state==='선정완료') advAgg[c].sel++;
+      else if(r.state==='캠페인종료') advAgg[c].close++;
+    });
+    var fee=tot*FEE, mkt=rangeCost();
+    return { rows:rows, ok:ok, mAgg:mAgg, chAgg:chAgg, advAgg:advAgg, st:st,
+      tot:tot, prf:prf, fee:fee, mkt:mkt, costAll:fee+mkt, op:prf-fee-mkt };
   }
-  function kpi(ic,lb,v,s,color){ return '<div class="card k"><div class="lb">'+ic+' '+lb+'</div><div class="v" style="color:'+color+'">'+v+'</div><div class="s">'+s+'</div></div>'; }
-  function mini(l,n,c){ return '<div class="m"><div class="l">'+l+'</div><div class="n" style="color:'+c+'">'+n+'</div></div>'; }
+  function stBadge(s){
+    var cls = s==='모집중'||s==='추가모집'||s==='선정완료'? 'bg-blue' : s==='캠페인종료'? 'bg-green' : CANCEL[s]? 'bg-red' : 'bg-gray';
+    return '<span class="badge '+cls+'">'+esc(s)+'</span>';
+  }
+  function campRowsHTML(list, lim){
+    var h='<tr><th>No</th><th>캠페인</th><th>광고주</th><th>채널</th><th>상태</th><th>모집/선정/완료</th><th>생성일</th><th>매출</th></tr>';
+    list.slice(0,lim).forEach(function(r){
+      h+='<tr><td class="mutd">'+r.no+'</td><td style="text-align:left;max-width:250px;overflow:hidden;text-overflow:ellipsis"><b>'+esc(r.nm)+'</b></td><td>'+esc(r.corp||r.store||'-')+'</td><td>'+esc(r.chnnl||'-')+'</td><td>'+stBadge(r.state)+'</td><td class="mutd">'+f(r.mo)+'/'+f(r.sel)+'/'+f(r.msn)+'명</td><td class="mutd">'+d10(r).slice(5)+'</td><td>'+(CANCEL[r.state]? '<span class="mutd">제외</span>' : f(sales(r)/1e4)+'만')+'</td></tr>';
+    });
+    return h;
+  }
 
-  function hookTip(mAgg){
-    var chart=document.getElementById('mchart'), tip=document.getElementById('tip');
-    if(chart.__tt){ chart.__agg=mAgg; return; }
-    chart.__tt=true; chart.__agg=mAgg;
+  /* ── 렌더: 공통 ── */
+  function render(){
+    if(!ROWS.length || !isNew()){ return; }
+    document.getElementById('loading').style.display='none';
+    document.getElementById('tabs').style.display='';
+    var up = META.updatedAt? META.updatedAt.replace('T',' ').slice(0,16)+' UTC' : '없음';
+    document.getElementById('syncTxt').textContent='마지막 동기화 '+up+' · 캠페인 '+f(META.count||ROWS.length)+'건';
+    var stale=staleMs()>3*3600*1000;
+    document.getElementById('syncBadge').className='sync'+(stale?' stale':'');
+    document.getElementById('badgeTxt').textContent= stale? '🔄 오래됨 — 눌러서 동기화' : '⚡ 최신 · '+f(META.count||ROWS.length)+'건';
+    renderSeg(); renderPeriodNote();
+    var A=agg();
+    renderHome(A); renderRev(A); renderAdv(A); renderCamp(A); renderCost(A);
+  }
+  function renderSeg(){
+    var ps=[['month','이번 달'],['3m','최근 3개월'],['year','올해'],['lastyear','작년'],['all','전체']];
+    document.getElementById('segBar').innerHTML = ps.map(function(p){
+      return '<button class="'+(PERIOD.preset===p[0]?'on':'')+'" onclick="PZ.preset(\''+p[0]+'\')">'+p[1]+'</button>';
+    }).join('');
+    var rg=curRange();
+    document.getElementById('dFrom').value=rg[0]; document.getElementById('dTo').value=rg[1];
+  }
+  function renderPeriodNote(){
+    var rg=curRange();
+    document.getElementById('periodNote').textContent = rg[0].replace(/-/g,'.')+' ~ '+rg[1].replace(/-/g,'.')+' · 모든 탭 공통 · 기준: 캠페인 생성일';
+  }
+
+  /* ── 홈 ── */
+  function renderHome(A){
+    var thisM=new Date().toISOString().slice(0,7);
+    var mNow=A.mAgg[thisM]||{n:0,sales:0};
+    var pd=new Date(); pd.setMonth(pd.getMonth()-1); var prevM=pd.toISOString().slice(0,7);
+    var mPrev=A.mAgg[prevM]||{n:0,sales:0};
+    var delta = mPrev.sales>0? Math.round((mNow.sales-mPrev.sales)/mPrev.sales*100) : null;
+    var rate = A.tot>0? (A.op/A.tot*100) : 0;
+    var prog=(A.st['모집중']||0)+(A.st['추가모집']||0);
+    var h='';
+    h+='<div class="row k5">';
+    h+=kpi('📈','매출', '<span style="color:var(--blue)">'+eok(A.tot)+'</span>', f(A.ok.length)+'건'+(delta!=null? ' · 이번 달 '+eok(mNow.sales)+' <span class="'+(delta>=0?'up':'dn')+'">'+(delta>=0?'▲':'▼')+Math.abs(delta)+'%</span>':''));
+    h+=kpi('💸','비용 합계','<span style="color:var(--amber)">'+eok(A.costAll)+'</span>','수수료 '+eok(A.fee)+' + 마케팅비 '+(A.mkt? eok(A.mkt):'0'));
+    h+='<div class="card hero"><div class="lb">💎 영업이익</div><div class="v">'+eok(A.op)+'</div><div class="s">포인트 수익 '+eok(A.prf)+' − 비용 '+eok(A.costAll)+'</div></div>';
+    h+=kpi('📊','이익률', rate.toFixed(1)+'%','영업이익 ÷ 매출'+(A.mkt? '' : ' · ⚠ 마케팅비 미입력'));
+    h+=kpi('🚀','진행 중', f(prog)+'<small style="font-size:14px">건</small>','선정완료 '+f(A.st['선정완료']||0)+' · 종료 '+f(A.st['캠페인종료']||0));
+    h+='</div>';
+
+    /* 월별 콤보 차트 */
+    var mons=monthsInRange(), maxV=1;
+    mons.forEach(function(k){ var v=A.mAgg[k]; if(v) maxV=Math.max(maxV,v.sales); });
+    var bars='';
+    mons.forEach(function(k){
+      var v=A.mAgg[k]||{n:0,sales:0,profit:0,mo:0,sel:0};
+      var cost=v.sales*FEE+monthCost(k), op=v.profit-cost;
+      var hr=Math.round(v.sales/maxV*150), hc=Math.round(cost/maxV*150), hp=Math.round(Math.abs(op)/maxV*150);
+      bars+='<div class="mcol" data-tt="'+k+'"><div class="mamt">'+(v.sales? eok(v.sales):'')+'</div>'+
+        '<div class="bars"><div class="b rev" style="height:'+Math.max(v.sales?3:0,hr)+'px"></div>'+
+        '<div class="b cost" style="height:'+Math.max(cost?2:0,hc)+'px"></div>'+
+        '<div class="b prf'+(op<0?' neg':'')+'" style="height:'+Math.max(v.profit?2:0,hp)+'px"></div></div>'+
+        '<div class="mlbl">'+(+k.slice(5,7))+'월'+(k===thisM?' <span class="pc">· 진행</span>':'')+'</div>'+
+        '<div class="mamt">'+(v.n? f(v.n)+'건':'–')+'</div></div>';
+    });
+    h+='<div class="row k2">';
+    h+='<div class="card"><h3>📊 월별 매출 · 비용 · 영업이익</h3><div class="td">선택 기간 · 취소 제외 · 막대 호버 시 상세</div><div class="chart" id="homeChart">'+bars+'</div>'+
+       '<div class="legend"><span><i style="background:var(--blue)"></i>매출</span><span><i style="background:var(--amber)"></i>비용(수수료+마케팅비)</span><span><i style="background:var(--green)"></i>영업이익</span></div></div>';
+    /* 파이프라인 */
+    var totalN=A.rows.length||1;
+    function pctS(n){ return Math.round(n/totalN*100)+'%'; }
+    var wait=(A.st['등록대기']||0)+(A.st['등록완료']||0)+(A.st['일시중지']||0);
+    var recruit=(A.st['모집중']||0)+(A.st['추가모집']||0);
+    var sel=A.st['선정완료']||0, close=A.st['캠페인종료']||0;
+    var cxl=(A.st['캠페인취소']||0)+(A.st['등록취소']||0);
+    h+='<div class="card"><h3>🚀 캠페인 진행 현황</h3><div class="td">선택 기간 '+f(A.rows.length)+'건 · 클릭 시 캠페인 현황 탭</div>'+
+      '<div class="pipe">'+
+      '<div class="stage" onclick="PZ.goSt(\'wait\')"><span>등록대기·완료</span><b>'+f(wait)+'</b><div class="pct">'+pctS(wait)+'</div></div>'+
+      '<div class="stage hot" onclick="PZ.goSt(\'모집중\')"><span>모집중</span><b>'+f(recruit)+'</b><div class="pct">'+pctS(recruit)+'</div></div>'+
+      '<div class="stage hot" onclick="PZ.goSt(\'선정완료\')"><span>선정완료</span><b>'+f(sel)+'</b><div class="pct">'+pctS(sel)+'</div></div>'+
+      '<div class="stage done" onclick="PZ.goSt(\'캠페인종료\')"><span>종료</span><b>'+f(close)+'</b><div class="pct">'+pctS(close)+'</div></div>'+
+      '</div><div style="display:flex;justify-content:flex-end;margin-top:8px"><div class="cancel" onclick="PZ.goSt(\'cancel\')"><span>취소</span> <b>'+f(cxl)+'</b> <span class="pct" style="color:var(--mut)">'+pctS(cxl)+'</span></div></div>'+
+      '<div class="flowbar">'+(wait?'<i style="flex:'+wait+';background:#c3c9d4"></i>':'')+(recruit+sel?'<i style="flex:'+(recruit+sel)+';background:var(--blue)"></i>':'')+(close?'<i style="flex:'+close+';background:var(--green)"></i>':'')+(cxl?'<i style="flex:'+cxl+';background:#e2b5ad"></i>':'')+'</div></div>';
+    h+='</div>';
+
+    /* 채널 + 광고주 TOP */
+    var chArr=Object.keys(A.chAgg).map(function(k){return {k:k,v:A.chAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
+    var chMax=chArr.length? chArr[0].v.sales:1;
+    var chH=chArr.slice(0,6).map(function(x){
+      var pct=A.tot? Math.round(x.v.sales/A.tot*100):0;
+      return '<div class="hrow"><span class="nm">'+esc(x.k)+'</span><div class="trk"><div class="fill" style="width:'+Math.max(2,Math.round(x.v.sales/chMax*100))+'%;background:'+(CH_COLOR[x.k]||'#8a94a6')+'"></div></div><span class="val">'+eok(x.v.sales)+' <span class="pc">'+pct+'% · '+f(x.v.n)+'건</span></span></div>';
+    }).join('');
+    var advArr=Object.keys(A.advAgg).map(function(k){return {k:k,v:A.advAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
+    var advH='<table><tr><th>광고주</th><th>캠페인</th><th>진행중</th><th>매출</th><th>비중</th></tr>'+
+      advArr.slice(0,5).map(function(x){
+        return '<tr><td><b>'+esc(x.k)+'</b></td><td>'+f(x.v.n)+'건</td><td><span class="badge '+(x.v.prog?'bg-blue':'bg-gray')+'">'+x.v.prog+'</span></td><td><b>'+eok(x.v.sales)+'</b></td><td class="mutd">'+(A.tot? (x.v.sales/A.tot*100).toFixed(1):0)+'%</td></tr>';
+      }).join('')+'</table>';
+    h+='<div class="row k2e">'+
+      '<div class="card"><h3>🛍️ 채널별 매출</h3><div class="td">선택 기간 · 취소 제외</div>'+chH+'</div>'+
+      '<div class="card"><h3>🏢 광고주 TOP 5</h3><div class="td">캠페인 신청 수 · 매출 — 전체는 광고주 탭</div>'+advH+'</div></div>';
+    document.getElementById('tab-home').innerHTML=h;
+    hookTip(A);
+  }
+  function kpi(ic,lb,v,s){ return '<div class="card"><div class="lb">'+ic+' '+lb+'</div><div class="v">'+v+'</div><div class="s">'+s+'</div></div>'; }
+
+  /* ── 매출·수익 ── */
+  function monthBanner(k, A){
+    var list=A.ok.filter(function(r){return ym(r)===k;}).sort(function(a,b){return sales(b)-sales(a);});
+    var v=A.mAgg[k]||{n:0,sales:0,profit:0};
+    var c=COSTS[k]||{}, items=costItems();
+    var mkt=monthCost(k), fee=v.sales*FEE, op=v.profit-fee-mkt;
+    var mDetail=items.map(function(it){ var x=+c[it.id]||0; return x? esc(it.name.slice(0,4))+' '+f(x/1e4) : ''; }).filter(Boolean).join('·');
+    var chSub={}, advSub={};
+    list.forEach(function(r){ var ch=r.chnnl||'기타'; if(!chSub[ch])chSub[ch]={n:0,s:0}; chSub[ch].n++; chSub[ch].s+=sales(r);
+      var a=r.corp||r.store||'(미입력)'; if(!advSub[a])advSub[a]={n:0,s:0}; advSub[a].n++; advSub[a].s+=sales(r); });
+    var chArr=Object.keys(chSub).map(function(x){return{k:x,v:chSub[x]};}).sort(function(a,b){return b.v.s-a.v.s;});
+    var advArr=Object.keys(advSub).map(function(x){return{k:x,v:advSub[x]};}).sort(function(a,b){return b.v.s-a.v.s;});
+    var advSet={}; list.forEach(function(r){ advSet[r.corp||r.store||'-']=1; });
+    var h='<div class="banner"><h4>📅 '+k.replace('-','년 ')+'월 세부 내역</h4>'+
+      '<div class="bd">캠페인 '+f(list.length)+'건 · 광고주 '+f(Object.keys(advSet).length)+'곳</div>'+
+      '<div class="bchips">'+
+      '<div class="bchip"><div class="l">매출</div><div class="n">'+eok(v.sales)+'</div></div>'+
+      '<div class="bchip"><div class="l">포인트 수익</div><div class="n">'+eok(v.profit)+'</div></div>'+
+      '<div class="bchip"><div class="l">카드수수료</div><div class="n neg">-'+eok(fee)+'</div></div>'+
+      '<div class="bchip"><div class="l">마케팅비용</div><div class="n '+(mkt?'neg':'mutd')+'">'+(mkt? '-'+eok(mkt):'미입력')+(mDetail? ' <span style="font-size:10px;color:var(--mut);font-weight:600">'+mDetail+'</span>':'')+'</div></div>'+
+      '<div class="bchip gr"><div class="l">영업이익</div><div class="n '+(op>=0?'pos':'neg')+'">'+eok(op)+' ('+(v.sales? (op/v.sales*100).toFixed(1):0)+'%)</div></div>'+
+      (mkt? '<div class="bchip"><div class="l">ROAS</div><div class="n">'+f(v.sales/mkt*100)+'%</div></div>':'')+
+      '</div><div class="bgrid"><div>'+
+      '<div class="bd" style="margin-bottom:6px"><b>캠페인 내역</b> (매출순 · '+f(list.length)+'건)</div>'+
+      '<div class="scroll"><table>'+campRowsHTML(list, OPENM[k]==='all'? 500:8)+'</table></div>'+
+      (list.length>8 && OPENM[k]!=='all'? '<span class="more" onclick="PZ.moreM(\''+k+'\')">＋ 나머지 '+f(list.length-8)+'건 더 보기</span> · ':'')+
+      '<span class="more" onclick="PZ.csvMonth(\''+k+'\')">⬇ '+(+k.slice(5,7))+'월 캠페인 CSV</span>'+
+      '</div><div>'+
+      '<div class="bd" style="margin-bottom:6px"><b>채널별 소계</b></div><table><tr><th>채널</th><th>건수</th><th>매출</th><th>비중</th></tr>'+
+      chArr.slice(0,5).map(function(x){ return '<tr><td>'+esc(x.k)+'</td><td class="mutd">'+f(x.v.n)+'건</td><td>'+eok(x.v.s)+'</td><td class="mutd">'+(v.sales? Math.round(x.v.s/v.sales*100):0)+'%</td></tr>'; }).join('')+'</table>'+
+      '<div class="bd" style="margin:12px 0 6px"><b>광고주 TOP 3</b></div><table><tr><th>광고주</th><th>캠페인</th><th>매출</th></tr>'+
+      advArr.slice(0,3).map(function(x){ return '<tr><td>'+esc(x.k)+'</td><td class="mutd">'+f(x.v.n)+'건</td><td>'+eok(x.v.s)+'</td></tr>'; }).join('')+'</table>'+
+      '</div></div></div>';
+    return h;
+  }
+  function chBanner(ch, A){
+    var list=A.ok.filter(function(r){return (r.chnnl||'기타')===ch;}).sort(function(a,b){return sales(b)-sales(a);});
+    var v=A.chAgg[ch]||{n:0,sales:0,profit:0,mo:0,sel:0,prog:0};
+    var advSub={}; list.forEach(function(r){ var a=r.corp||r.store||'(미입력)'; if(!advSub[a])advSub[a]={n:0,s:0}; advSub[a].n++; advSub[a].s+=sales(r); });
+    var advArr=Object.keys(advSub).map(function(x){return{k:x,v:advSub[x]};}).sort(function(a,b){return b.v.s-a.v.s;});
+    var mons=monthsInRange(), mline='<tr><td>매출</td>', cline='<tr><td class="mutd">건수</td>', head='<tr><th>월</th>';
+    var mAggC={}; list.forEach(function(r){ var k=ym(r); if(!mAggC[k])mAggC[k]={n:0,s:0}; mAggC[k].n++; mAggC[k].s+=sales(r); });
+    var shown=mons.slice(-12);
+    shown.forEach(function(k){ var x=mAggC[k]||{n:0,s:0}; head+='<th>'+(+k.slice(5,7))+'월</th>'; mline+='<td>'+(x.s? eok(x.s):'–')+'</td>'; cline+='<td class="mutd">'+(x.n? f(x.n)+'건':'–')+'</td>'; });
+    head+='</tr>'; mline+='</tr>'; cline+='</tr>';
+    var avgPay = v.mo? Math.round(v.sales/v.mo) : 0;
+    return '<div class="banner" style="border-left-color:'+(CH_COLOR[ch]||'#8a94a6')+'"><h4>'+esc(ch)+' 세부 내역</h4>'+
+      '<div class="bd">선택 기간 '+f(v.n)+'건 · 광고주 '+f(advArr.length)+'곳 · 평균 결제 '+f(avgPay)+'원/명</div>'+
+      '<div class="bchips">'+
+      '<div class="bchip"><div class="l">매출</div><div class="n">'+eok(v.sales)+'</div></div>'+
+      '<div class="bchip"><div class="l">포인트 수익</div><div class="n">'+eok(v.profit)+'</div></div>'+
+      '<div class="bchip"><div class="l">모집 / 선정</div><div class="n">'+f(v.mo)+' / '+f(v.sel)+'명</div></div>'+
+      '<div class="bchip"><div class="l">진행중</div><div class="n">'+f(v.prog)+'건</div></div></div>'+
+      '<div class="bd" style="margin-bottom:6px"><b>월별 추이</b></div><div class="scroll"><table>'+head+mline+cline+'</table></div>'+
+      '<div class="bd" style="margin:12px 0 6px"><b>이 채널 광고주 TOP 3</b></div><table><tr><th>광고주</th><th>캠페인</th><th>매출</th><th>비중</th></tr>'+
+      advArr.slice(0,3).map(function(x){ return '<tr><td>'+esc(x.k)+'</td><td class="mutd">'+f(x.v.n)+'건</td><td>'+eok(x.v.s)+'</td><td class="mutd">'+(v.sales? (x.v.s/v.sales*100).toFixed(1):0)+'%</td></tr>'; }).join('')+'</table>'+
+      '<span class="more" onclick="PZ.csvCh(\''+esc(ch)+'\')">⬇ '+esc(ch)+' 캠페인 CSV</span></div>';
+  }
+  function renderRev(A){
+    var mons=monthsInRange().slice().reverse();
+    var h='<div class="card" style="margin-bottom:14px"><h3>💰 월별 손익 상세</h3>'+
+      '<div class="td">매출 = 결제금액×모집인원(취소 제외) · 영업이익 = 포인트 수익 − 카드수수료(3.2%) − 마케팅비용 · 💡 <b>월 행 클릭</b> 시 세부 배너</div>'+
+      '<div class="scroll"><table><tr><th>월</th><th>매출</th><th>건수</th><th>포인트 수익</th><th>카드수수료</th><th>마케팅비용</th><th>영업이익</th><th>이익률</th></tr>';
+    var thisM=new Date().toISOString().slice(0,7);
+    var shown=0;
+    mons.forEach(function(k){
+      var v=A.mAgg[k], mkt=monthCost(k);
+      if(!v && !mkt){ if(k>thisM) return; if(shown>14) return; }
+      v=v||{n:0,sales:0,profit:0}; shown++;
+      var fee=v.sales*FEE, op=v.profit-fee-mkt, open=!!OPENM[k];
+      h+='<tr class="clickable'+(open?' open':'')+'" onclick="PZ.togM(\''+k+'\')"><td><span class="caret">▶</span><b>'+k+'</b>'+(k===thisM?' <span class="tag">진행</span>':'')+'</td>'+
+        '<td>'+(v.sales? eok(v.sales):'<span class="mutd">–</span>')+'</td><td class="mutd">'+(v.n? f(v.n)+'건':'–')+'</td>'+
+        '<td>'+(v.profit? eok(v.profit):'<span class="mutd">–</span>')+'</td><td class="neg">'+(fee? '-'+eok(fee):'–')+'</td>'+
+        '<td>'+(mkt? '<span class="neg">-'+eok(mkt)+'</span>':'<span class="mutd">–</span>')+'</td>'+
+        '<td class="'+(op>=0?'pos':'neg')+'">'+eok(op)+'</td><td>'+(v.sales? (op/v.sales*100).toFixed(1)+'%':'–')+'</td></tr>';
+      if(open) h+='<tr class="detail open"><td colspan="8">'+monthBanner(k, A)+'</td></tr>';
+    });
+    var fee=A.tot*FEE;
+    h+='<tr class="sum"><td>합계</td><td>'+eok(A.tot)+'</td><td>'+f(A.ok.length)+'건</td><td>'+eok(A.prf)+'</td><td class="neg">-'+eok(fee)+'</td><td class="neg">'+(A.mkt?'-'+eok(A.mkt):'0')+'</td><td class="'+(A.op>=0?'pos':'neg')+'">'+eok(A.op)+'</td><td>'+(A.tot? (A.op/A.tot*100).toFixed(1)+'%':'–')+'</td></tr>';
+    h+='</table></div></div>';
+
+    var chArr=Object.keys(A.chAgg).map(function(k){return {k:k,v:A.chAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
+    h+='<div class="row k2e"><div class="card"><h3>🛍️ 채널별 손익</h3><div class="td">💡 <b>채널 행 클릭</b> 시 세부 내역 배너</div>'+
+      '<div class="scroll"><table><tr><th>채널</th><th>매출</th><th>건수</th><th>포인트 수익</th><th>비중</th></tr>';
+    chArr.forEach(function(x){
+      var open=!!OPENCH[x.k];
+      h+='<tr class="clickable'+(open?' open':'')+'" onclick="PZ.togCh(\''+esc(x.k)+'\')"><td><span class="caret">▶</span><i style="display:inline-block;width:9px;height:9px;border-radius:3px;background:'+(CH_COLOR[x.k]||'#8a94a6')+';margin-right:6px"></i>'+esc(x.k)+'</td>'+
+        '<td>'+eok(x.v.sales)+'</td><td class="mutd">'+f(x.v.n)+'건</td><td>'+eok(x.v.profit)+'</td><td class="mutd">'+(A.tot? Math.round(x.v.sales/A.tot*100):0)+'%</td></tr>';
+      if(open) h+='<tr class="detail open"><td colspan="5">'+chBanner(x.k, A)+'</td></tr>';
+    });
+    h+='</table></div></div>'+
+      '<div class="card"><h3>📤 내보내기</h3><div class="td">선택 기간 기준</div>'+
+      '<button class="btn ghost" onclick="PZ.csvMonthly()">⬇ 월별 손익 CSV</button> '+
+      '<button class="btn ghost" onclick="PZ.csvAll()">⬇ 캠페인 전체 CSV</button>'+
+      '<div class="s" style="margin-top:12px">기간을 바꾸면 모든 표가 해당 기간으로 재집계됩니다.</div></div></div>';
+    document.getElementById('tab-rev').innerHTML=h;
+  }
+
+  /* ── 광고주 ── */
+  function renderAdv(A){
+    var arr=Object.keys(A.advAgg).map(function(k){return {k:k,v:A.advAgg[k]};});
+    if(ADVQ){ var q=ADVQ.toLowerCase(); arr=arr.filter(function(x){return x.k.toLowerCase().indexOf(q)>=0;}); }
+    arr.sort(function(a,b){
+      var k=ADVSORT.k, d=ADVSORT.d;
+      var av=k==='name'? a.k : a.v[k]||0, bv=k==='name'? b.k : b.v[k]||0;
+      return (av<bv? -1: av>bv? 1:0)*d;
+    });
+    var h='<div class="card"><div class="toolrow"><div><h3>🏢 광고주별 현황</h3><div class="td" style="margin:0">선택 기간 · 광고주 '+f(arr.length)+'곳 · 💡 행 클릭 시 캠페인 리스트 · 열 클릭 정렬</div></div>'+
+      '<div style="display:flex;gap:8px"><input class="search" placeholder="🔍 광고주 검색" value="'+esc(ADVQ)+'" oninput="PZ.advSearch(this.value)"><button class="btn ghost" onclick="PZ.csvAdv()">⬇ CSV</button></div></div>'+
+      '<div class="scroll"><table><tr><th class="sortable" onclick="PZ.advSort(\'name\')">#&nbsp;광고주'+sArrow('name')+'</th><th class="sortable" onclick="PZ.advSort(\'n\')">캠페인 신청'+sArrow('n')+'</th><th>진행중</th><th>선정완료</th><th>종료</th><th>취소</th><th>모집/선정 인원</th><th class="sortable" onclick="PZ.advSort(\'sales\')">매출'+sArrow('sales')+'</th><th>비중</th></tr>';
+    arr.slice(0,ADVLIMIT).forEach(function(x,i){
+      var open=!!OPENADV[x.k];
+      h+='<tr class="clickable'+(open?' open':'')+'" onclick="PZ.togAdv(\''+esc(x.k).replace(/'/g,"\\'")+'\')"><td><span class="caret">▶</span><span class="mutd">'+(i+1)+'</span> <b>'+esc(x.k)+'</b></td>'+
+        '<td><b>'+f(x.v.n)+'건</b></td><td><span class="badge '+(x.v.prog?'bg-blue':'bg-gray')+'">'+x.v.prog+'</span></td>'+
+        '<td>'+f(x.v.sel)+'</td><td>'+f(x.v.close)+'</td><td class="mutd">'+f(x.v.cancel)+'</td>'+
+        '<td class="mutd">'+f(x.v.moT)+' / '+f(x.v.selT)+'명</td><td><b>'+eok(x.v.sales)+'</b></td>'+
+        '<td class="mutd">'+(A.tot? (x.v.sales/A.tot*100).toFixed(1):0)+'%</td></tr>';
+      if(open){
+        var list=A.rows.filter(function(r){return (r.corp||r.store||'(미입력)')===x.k;}).sort(function(a,b){return (b.created||'')<(a.created||'')?-1:1;});
+        h+='<tr class="detail open"><td colspan="9"><div class="banner"><h4>🏢 '+esc(x.k)+' 캠페인 '+f(list.length)+'건</h4><div class="bd">최신순 · 취소 포함</div><div class="scroll"><table>'+campRowsHTML(list,50)+'</table></div></div></td></tr>';
+      }
+    });
+    h+='</table></div>'+(arr.length>ADVLIMIT? '<span class="more" onclick="PZ.moreAdv()">＋ 나머지 '+f(arr.length-ADVLIMIT)+'곳 더 보기</span>':'')+'</div>';
+    document.getElementById('tab-adv').innerHTML=h;
+  }
+  function sArrow(k){ return ADVSORT.k===k? (ADVSORT.d<0?' ▼':' ▲') : ' ⇅'; }
+
+  /* ── 캠페인 현황 ── */
+  function renderCamp(A){
+    var totalN=A.rows.length||1;
+    function pctS(n){ return (n/totalN*100).toFixed(1)+'%'; }
+    var stages=[['등록대기',A.st['등록대기']||0,''],['등록완료',A.st['등록완료']||0,''],['모집중',(A.st['모집중']||0),'hot'],['추가모집',A.st['추가모집']||0,'hot'],['선정완료',A.st['선정완료']||0,'hot'],['캠페인종료',A.st['캠페인종료']||0,'done']];
+    var cxl=(A.st['캠페인취소']||0)+(A.st['등록취소']||0);
+    var h='<div class="card" style="margin-bottom:14px"><h3>🚀 진행 파이프라인</h3><div class="td">선택 기간 '+f(A.rows.length)+'건 · 단계 클릭 시 아래 리스트 필터</div><div class="pipe">';
+    stages.forEach(function(s){ h+='<div class="stage '+s[2]+'" onclick="PZ.stFilter(\''+s[0]+'\')"><span>'+s[0]+'</span><b>'+f(s[1])+'</b><div class="pct">'+pctS(s[1])+'</div></div>'; });
+    h+='<div class="cancel" onclick="PZ.stFilter(\'cancel\')"><span>취소</span> <b>'+f(cxl)+'</b><div class="pct" style="color:var(--mut)">'+pctS(cxl)+' · 캠페인 '+f(A.st['캠페인취소']||0)+' + 등록 '+f(A.st['등록취소']||0)+'</div></div></div></div>';
+
+    var list=A.rows.slice().sort(function(a,b){return (b.created||'')<(a.created||'')?-1:1;});
+    if(STFILTER==='cancel') list=list.filter(function(r){return CANCEL[r.state];});
+    else if(STFILTER==='wait') list=list.filter(function(r){return r.state==='등록대기'||r.state==='등록완료'||r.state==='일시중지';});
+    else if(STFILTER==='모집중') list=list.filter(function(r){return r.state==='모집중'||r.state==='추가모집';});
+    else if(STFILTER) list=list.filter(function(r){return r.state===STFILTER;});
+    var chipsDef=[['','전체',A.rows.length],['모집중','모집중',(A.st['모집중']||0)+(A.st['추가모집']||0)],['선정완료','선정완료',A.st['선정완료']||0],['캠페인종료','종료',A.st['캠페인종료']||0],['wait','등록대기·완료',(A.st['등록대기']||0)+(A.st['등록완료']||0)],['cancel','취소',cxl]];
+    h+='<div class="card"><div class="toolrow"><h3>📋 캠페인 리스트</h3><div class="chips">'+
+      chipsDef.map(function(cd){ return '<span class="chip'+(STFILTER===cd[0]?' on':'')+'" onclick="PZ.stFilter(\''+cd[0]+'\')">'+cd[1]+' '+f(cd[2])+'</span>'; }).join('')+'</div></div>'+
+      '<div class="scroll"><table>'+campRowsHTML(list, CAMPLIMIT)+'</table></div>'+
+      (list.length>CAMPLIMIT? '<span class="more" onclick="PZ.moreCamp()">＋ 나머지 '+f(list.length-CAMPLIMIT)+'건 더 보기</span>':'')+'</div>';
+    document.getElementById('tab-camp').innerHTML=h;
+  }
+
+  /* ── 비용 관리 ── */
+  function renderCost(A){
+    var items=costItems(), mons=monthsInRange().slice().reverse();
+    var thisM=new Date().toISOString().slice(0,7);
+    var h='<div class="row k2"><div class="card"><div class="toolrow"><div><h3>💸 마케팅 비용 입력 <span class="tag hand">수기</span></h3>'+
+      '<div class="td" style="margin:0">항목별 · 월별 입력 → 저장 시 전 탭 손익에 자동 반영 (모든 PC 공유)</div></div></div>'+
+      '<div class="scroll"><table><tr><th>월</th>';
+    items.forEach(function(it){ h+='<th>'+esc(it.name)+'</th>'; });
+    h+='<th>합계</th><th>비용률</th><th>ROAS</th></tr>';
+    var shown=0, sums={};
+    mons.forEach(function(k){
+      var mv=(A.mAgg[k]||{sales:0}).sales, tot=monthCost(k);
+      if(!mv && !tot && k>thisM) return;
+      if(shown>=14 && !mv && !tot) return;
+      shown++;
+      var c=COSTS[k]||{};
+      h+='<tr><td><b>'+k+'</b></td>';
+      items.forEach(function(it){ var x=+c[it.id]||0; sums[it.id]=(sums[it.id]||0)+x;
+        h+='<td><input class="ci" data-m="'+k+'" data-i="'+esc(it.id)+'" value="'+(x? f(x):'')+'" placeholder="0"></td>'; });
+      h+='<td><b>'+(tot? eok(tot):'–')+'</b></td>'+
+        '<td>'+(tot&&mv? '<span class="'+(tot/mv>0.15?'neg':'')+'">'+(tot/mv*100).toFixed(1)+'%</span>':'<span class="mutd">–</span>')+'</td>'+
+        '<td>'+(tot&&mv? '<span class="pos">'+f(mv/tot*100)+'%</span>':'<span class="mutd">–</span>')+'</td></tr>';
+    });
+    var sumAll=0; items.forEach(function(it){ sumAll+=(sums[it.id]||0); });
+    h+='<tr class="sum"><td>합계</td>';
+    items.forEach(function(it){ h+='<td>'+(sums[it.id]? eok(sums[it.id]):'–')+'</td>'; });
+    h+='<td>'+(sumAll? eok(sumAll):'–')+'</td><td>'+(sumAll&&A.tot? (sumAll/A.tot*100).toFixed(1)+'%':'–')+'</td><td>'+(sumAll&&A.tot? '<span class="pos">'+f(A.tot/sumAll*100)+'%</span>':'–')+'</td></tr>';
+    h+='</table></div><div style="display:flex;align-items:center;gap:10px;margin-top:14px"><button class="btn" onclick="PZ.saveCosts()">💾 비용 저장</button><span class="s" id="costMsg"></span></div></div>';
+
+    /* 항목 관리 + 구성 */
+    h+='<div class="card"><h3>⚙️ 비용 항목 관리 <span class="tag hand">커스터마이징</span></h3>'+
+      '<div class="td">항목 추가·이름 변경·순서·삭제 — 저장 시 모든 PC에 공유, 입력 표 열이 자동 반영</div>'+
+      '<table><tr><th style="text-align:left">항목명 (수정 후 저장)</th><th>색</th><th>순서</th><th></th></tr>';
+    items.forEach(function(it, i){
+      h+='<tr><td style="text-align:left"><input class="itemnm" data-item="'+esc(it.id)+'" value="'+esc(it.name)+'"></td>'+
+        '<td><span style="display:inline-block;width:15px;height:15px;border-radius:5px;background:'+itemColor(i)+'"></span></td>'+
+        '<td><button class="btn ghost sm" onclick="PZ.itemMove(\''+esc(it.id)+'\',-1)">↑</button> <button class="btn ghost sm" onclick="PZ.itemMove(\''+esc(it.id)+'\',1)">↓</button></td>'+
+        '<td><button class="btn ghost sm" style="color:var(--red)" onclick="PZ.itemDel(\''+esc(it.id)+'\')">삭제</button></td></tr>';
+    });
+    h+='<tr><td style="text-align:left"><input class="itemnm" id="newItemNm" placeholder="＋ 새 항목명 (예: 체험단 운영비)"></td><td class="mutd">자동</td><td class="mutd">맨 뒤</td><td><button class="btn sm" onclick="PZ.itemAdd()">추가</button></td></tr></table>'+
+      '<div class="s" style="margin:10px 0 16px">항목 삭제 시 그 항목의 과거 입력값은 합계에서 제외됩니다 — 필요하면 이름만 바꿔서 재사용하세요 · 저장 버튼을 눌러야 반영됩니다</div>';
+    var maxI=1; items.forEach(function(it){ maxI=Math.max(maxI, sums[it.id]||0); });
+    h+='<h3 style="margin-top:4px">📊 항목별 비용 구성</h3><div class="td">선택 기간 합계 '+(sumAll? eok(sumAll):'0')+'</div>';
+    items.forEach(function(it, i){
+      var x=sums[it.id]||0;
+      h+='<div class="hrow"><span class="nm" title="'+esc(it.name)+'">'+esc(it.name)+'</span><div class="trk"><div class="fill" style="width:'+(x? Math.max(2,Math.round(x/maxI*100)):0)+'%;background:'+itemColor(i)+'"></div></div><span class="val">'+(x? eok(x):'–')+' <span class="pc">'+(sumAll? Math.round(x/sumAll*100)+'%':'')+'</span></span></div>';
+    });
+    h+='<div class="s" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">💡 <b>카드 수수료(3.2%)는 자동 계산</b>되어 손익에 반영됩니다 — 여기 입력은 광고·운영성 비용만.</div></div></div>';
+    document.getElementById('tab-cost').innerHTML=h;
+  }
+
+  /* ── 툴팁 ── */
+  function hookTip(A){
+    var chart=document.getElementById('homeChart'), tip=document.getElementById('tip');
+    if(!chart) return;
     chart.addEventListener('mousemove', function(ev){
       var col=ev.target && ev.target.closest? ev.target.closest('[data-tt]'):null;
-      var k=col && col.getAttribute('data-tt'), v=k && chart.__agg[k];
+      var k=col && col.getAttribute('data-tt');
       if(!k){ tip.style.display='none'; return; }
-      v=v||{n:0,sales:0,profit:0,mo:0,sel:0};
-      var c=(window.__COSTS||{})[k]||{}; var ct=(+c.media||0)+(+c.prod||0);
-      tip.innerHTML='<b>'+k.replace('-','.')+'</b><br>매출 <b>'+f(v.sales/1e4)+'만원</b> · '+f(v.n)+'건<br>포인트 수익 '+f(v.profit/1e4)+'만원<br>모집 '+f(v.mo)+'명 · 선정 '+f(v.sel)+'명'+
-        (ct? '<br>마케팅비 '+f(ct/1e4)+'만원 · ROAS <b>'+f(v.sales/ct*100)+'%</b>':'');
+      var v=A.mAgg[k]||{n:0,sales:0,profit:0,mo:0,sel:0};
+      var mkt=monthCost(k), fee=v.sales*FEE, op=v.profit-fee-mkt;
+      tip.innerHTML='<b>'+k.replace('-','.')+'</b><br>매출 <b>'+f(v.sales/1e4)+'만원</b> · '+f(v.n)+'건<br>포인트 수익 '+f(v.profit/1e4)+'만원<br>수수료 '+f(fee/1e4)+'만 · 마케팅비 '+f(mkt/1e4)+'만<br>영업이익 <b>'+f(op/1e4)+'만원</b><br>모집 '+f(v.mo)+'명 · 선정 '+f(v.sel)+'명'+(mkt? '<br>ROAS <b>'+f(v.sales/mkt*100)+'%</b>':'');
       tip.style.display='block';
-      var w=tip.offsetWidth,h=tip.offsetHeight,x=ev.clientX+14,y=ev.clientY-h/2;
-      if(x+w>innerWidth-8) x=ev.clientX-w-14; if(y<8)y=8; if(y+h>innerHeight-8)y=innerHeight-h-8;
+      var w=tip.offsetWidth,hh=tip.offsetHeight,x=ev.clientX+14,y=ev.clientY-hh/2;
+      if(x+w>innerWidth-8) x=ev.clientX-w-14; if(y<8)y=8; if(y+hh>innerHeight-8)y=innerHeight-hh-8;
       tip.style.left=x+'px'; tip.style.top=y+'px';
     });
     chart.addEventListener('mouseleave', function(){ tip.style.display='none'; });
   }
 
-  function saveCosts(){
-    document.querySelectorAll('#costTbl input.ci').forEach(function(el){
-      var m=el.getAttribute('data-m'), fd=el.getAttribute('data-f');
-      if(!COSTS[m]) COSTS[m]={};
-      COSTS[m][fd]=parseInt(String(el.value).replace(/[^\d]/g,''),10)||0;
-    });
-    var msg=document.getElementById('costMsg'); msg.textContent='저장 중…';
-    fetch(WORKER+'pz/costs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(COSTS)})
-      .then(function(r){return r.json();})
-      .then(function(j){ msg.textContent=j.ok? '✅ 저장 완료 ('+new Date().toTimeString().slice(0,5)+')':'⚠️ 저장 실패'; render(); })
-      .catch(function(){ msg.textContent='⚠️ 저장 실패 — 네트워크 확인'; });
+  /* ── CSV ── */
+  function dlCsv(name, header, lines){
+    var blob=new Blob(['\ufeff'+header+'\n'+lines.join('\n')],{type:'text/csv;charset=utf-8'});
+    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); URL.revokeObjectURL(a.href);
   }
-  function csvCorp(){
-    var rows=(window.__corpAll||[]).map(function(x,i){ return '"'+(i+1)+'","'+String(x.k).replace(/"/g,'""')+'",'+x.v.n+','+x.v.sales; });
-    var blob=new Blob(['﻿순위,광고주,캠페인수,매출(원)\n'+rows.join('\n')],{type:'text/csv;charset=utf-8'});
-    var a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='퍼그제로_광고주별매출_'+YEAR+'.csv'; a.click(); URL.revokeObjectURL(a.href);
+  function campCsvLines(list){
+    return list.map(function(r){ return [r.no,'"'+String(r.nm||'').replace(/"/g,'""')+'"','"'+String(r.corp||r.store||'').replace(/"/g,'""')+'"',r.chnnl||'',r.state,r.mo||0,r.sel||0,r.msn||0,d10(r),CANCEL[r.state]?0:sales(r),profit(r)].join(','); });
   }
+  var CAMP_HEAD='캠페인번호,캠페인명,광고주,채널,상태,모집,선정,미션완료,생성일,매출(원),포인트수익(원)';
 
-  window.PZ = { refresh: function(){ refresh(true); }, saveCosts: saveCosts, csvCorp: csvCorp,
-    year: function(y){ YEAR=y; render(); } };
-
-  load(function(){
-    if(!ROWS.length || !isNew() || staleMs() > 3*3600*1000) refresh(true);
-    else render();
-    if(ROWS.length && isNew()) render();
+  /* ── 전역 API ── */
+  window.PZ = {
+    refresh: function(){ refresh(true); },
+    preset: function(p){ PERIOD.preset=p; resetOpen(); render(); },
+    applyRange: function(){ var a=document.getElementById('dFrom').value, b=document.getElementById('dTo').value; if(!a||!b||a>b) return; PERIOD={preset:'custom',from:a,to:b}; resetOpen(); render(); },
+    togM: function(k){ OPENM[k]= OPENM[k]? null: 1; render(); },
+    moreM: function(k){ OPENM[k]='all'; render(); },
+    togCh: function(k){ OPENCH[k]=!OPENCH[k]; render(); },
+    togAdv: function(k){ OPENADV[k]=!OPENADV[k]; render(); },
+    moreAdv: function(){ ADVLIMIT+=50; render(); },
+    moreCamp: function(){ CAMPLIMIT+=100; render(); },
+    advSearch: function(q){ ADVQ=q; clearTimeout(window.__advT); window.__advT=setTimeout(function(){ var el=document.activeElement; render(); var inp=document.querySelector('#tab-adv .search'); if(inp && el && el.className==='search'){ inp.focus(); inp.setSelectionRange(inp.value.length,inp.value.length);} },350); },
+    advSort: function(k){ if(ADVSORT.k===k) ADVSORT.d*=-1; else ADVSORT={k:k,d:k==='name'?1:-1}; render(); },
+    stFilter: function(s){ STFILTER = (STFILTER===s)? '': s; CAMPLIMIT=50;
+      if(TAB!=='camp'){ switchTab('camp'); } else render(); },
+    goSt: function(s){ STFILTER=s; CAMPLIMIT=50; switchTab('camp'); },
+    /* 비용 항목 관리 */
+    itemAdd: function(){
+      var nm=(document.getElementById('newItemNm').value||'').trim(); if(!nm) return;
+      var items=costItems().slice();
+      items.push({ id:'i'+Date.now().toString(36), name:nm });
+      COSTS.__items__=items; render();
+    },
+    itemDel: function(id){
+      var items=costItems().filter(function(it){return it.id!==id;});
+      if(!items.length) return;
+      if(!confirm('이 항목을 삭제할까요? 과거 입력값은 합계에서 제외됩니다.')) return;
+      COSTS.__items__=items; render();
+    },
+    itemMove: function(id, d){
+      var items=costItems().slice(), i=items.findIndex(function(it){return it.id===id;});
+      var j=i+d; if(i<0||j<0||j>=items.length) return;
+      var t=items[i]; items[i]=items[j]; items[j]=t;
+      COSTS.__items__=items; render();
+    },
+    saveCosts: function(){
+      /* 이름 변경 반영 */
+      var items=costItems().slice();
+      document.querySelectorAll('#tab-cost input.itemnm[data-item]').forEach(function(el){
+        var it=items.find(function(x){return x.id===el.getAttribute('data-item');});
+        if(it && el.value.trim()) it.name=el.value.trim();
+      });
+      COSTS.__items__=items;
+      document.querySelectorAll('#tab-cost input.ci').forEach(function(el){
+        var m=el.getAttribute('data-m'), id=el.getAttribute('data-i');
+        if(!COSTS[m]) COSTS[m]={};
+        COSTS[m][id]=parseInt(String(el.value).replace(/[^\d]/g,''),10)||0;
+      });
+      var msg=document.getElementById('costMsg'); msg.textContent='저장 중…';
+      fetch(WORKER+'pz/costs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(COSTS)})
+        .then(function(r){return r.json();})
+        .then(function(j){ if(j.ok){ render(); document.getElementById('costMsg').textContent='✅ 저장 완료 ('+new Date().toTimeString().slice(0,5)+')'; } else msg.textContent='⚠️ 저장 실패'; })
+        .catch(function(){ msg.textContent='⚠️ 저장 실패 — 네트워크 확인'; });
+    },
+    /* CSV */
+    csvMonth: function(k){ var A=agg(); dlCsv('퍼그제로_'+k+'_캠페인.csv', CAMP_HEAD, campCsvLines(A.ok.filter(function(r){return ym(r)===k;}))); },
+    csvCh: function(ch){ var A=agg(); dlCsv('퍼그제로_'+ch+'_캠페인.csv', CAMP_HEAD, campCsvLines(A.ok.filter(function(r){return (r.chnnl||'기타')===ch;}))); },
+    csvAll: function(){ var A=agg(); dlCsv('퍼그제로_캠페인_전체.csv', CAMP_HEAD, campCsvLines(A.rows)); },
+    csvAdv: function(){ var A=agg(); var arr=Object.keys(A.advAgg).map(function(k){return {k:k,v:A.advAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
+      dlCsv('퍼그제로_광고주별.csv','광고주,캠페인수,진행중,선정완료,종료,취소,모집인원,선정인원,매출(원)',
+        arr.map(function(x){return ['"'+x.k.replace(/"/g,'""')+'"',x.v.n,x.v.prog,x.v.sel,x.v.close,x.v.cancel,x.v.moT,x.v.selT,x.v.sales].join(',');})); },
+    csvMonthly: function(){ var A=agg();
+      dlCsv('퍼그제로_월별손익.csv','월,매출(원),건수,포인트수익(원),카드수수료(원),마케팅비용(원),영업이익(원)',
+        monthsInRange().map(function(k){ var v=A.mAgg[k]||{n:0,sales:0,profit:0}; var mkt=monthCost(k), fee=Math.round(v.sales*FEE);
+          return [k,v.sales,v.n,v.profit,fee,mkt,v.profit-fee-mkt].join(','); })); }
+  };
+  function resetOpen(){ OPENM={}; OPENCH={}; OPENADV={}; ADVLIMIT=30; CAMPLIMIT=50; }
+  function switchTab(t){
+    TAB=t;
+    document.querySelectorAll('#nav button').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-t')===t); });
+    document.querySelectorAll('.tab').forEach(function(x){ x.classList.remove('on'); });
+    document.getElementById('tab-'+t).classList.add('on');
+    render();
+  }
+  document.getElementById('nav').addEventListener('click', function(e){
+    var b=e.target.closest('button[data-t]'); if(b) switchTab(b.getAttribute('data-t'));
   });
+
+  /* ── 시작 (로그인 후 호출됨) ── */
+  var booted=false;
+  window.__pzInitApp = function(){
+    if(booted) return; booted=true;
+    load(function(){
+      if(!ROWS.length || !isNew() || staleMs() > 3*3600*1000) refresh(true);
+      if(ROWS.length && isNew()) render();
+    });
+  };
 })();
 </script>
 </body>
