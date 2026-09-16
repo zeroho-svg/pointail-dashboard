@@ -260,6 +260,44 @@ async function runSnapshot(env, ctx, trigger) {
   return meta;
 }
 
+// ═══ 🔐 인증 헬퍼 ═══════════════════════════════════════════
+const AUTH_DOMAIN = "storelink.io";
+const AUTH_CLIENT_ID = "412852365677-78te0hmm3a2tgccesb5rqbiputqcc5ig.apps.googleusercontent.com";
+const AUTH_HOURS = 12;
+function b64u(bytes) {
+  let s = "";
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+async function authSign(payload, env) {
+  const secret = env.AUTH_SECRET || env.ADMIN_PW || "";
+  const key = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode("ptauth-v1:" + secret),
+    { name: "HMAC", hash: "SHA-256" }, false, ["sign"]
+  );
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return b64u(new Uint8Array(sig));
+}
+async function authIssue(email, env) {
+  const payload = b64u(new TextEncoder().encode(JSON.stringify({ e: email, x: Date.now() + AUTH_HOURS * 3600 * 1000 })));
+  return payload + "." + (await authSign(payload, env));
+}
+async function authVerify(tok, env) {
+  try {
+    if (!tok) return null;
+    const i = tok.lastIndexOf(".");
+    if (i < 1) return null;
+    const payload = tok.slice(0, i), sig = tok.slice(i + 1);
+    if (sig !== (await authSign(payload, env))) return null;
+    const b64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const p = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))));
+    if (!p.e || !String(p.e).endsWith("@" + AUTH_DOMAIN)) return null;
+    if (!p.x || Date.now() > p.x) return null;
+    return p;
+  } catch (e) { return null; }
+}
+// ═══════════════════════════════════════════════════════════
+
 export default {
   // 크론 트리거(0 0/3 * * * UTC = KST 09·12·15·18·21·00·03·06시)에서 자동 실행
   async scheduled(event, env, ctx) {
@@ -268,13 +306,45 @@ export default {
 
   async fetch(request, env, ctx) {
     const cors = {
-      "Access-Control-Allow-Origin": env.ALLOW_ORIGIN || "*",
-      "Access-Control-Allow-Methods": "GET, PUT, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Origin": env.ALLOW_ORIGIN || "https://zeroho-svg.github.io",
+      "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     };
     if (request.method === "OPTIONS") return new Response(null, { headers: cors });
 
     const url = new URL(request.url);
+
+    // ═══ 🔐 인증 (2026-09-16 보안 강화) ═══════════════════════
+    //  ① POST /auth/login {credential: <Google ID token>}
+    //     → Google tokeninfo로 서명·클라이언트ID 검증 + @storelink.io 도메인 확인
+    //     → HMAC 서명된 12시간 세션 토큰 발급
+    //  ② 그 외 모든 엔드포인트: Authorization: Bearer <토큰> 필수 (없으면 401)
+    //  서명 키 = AUTH_SECRET 시크릿 (없으면 ADMIN_PW로 폴백)
+    if (url.pathname === "/auth/login") {
+      if (request.method !== "POST") return json({ error: "허용되지 않은 메서드" }, 405, cors);
+      let cred = "";
+      try { cred = ((await request.json()) || {}).credential || ""; } catch (e) {}
+      if (!cred) return json({ error: "credential 누락" }, 400, cors);
+      try {
+        const r = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(cred));
+        if (!r.ok) return json({ error: "구글 토큰 검증 실패" }, 401, cors);
+        const info = await r.json();
+        if (info.aud !== AUTH_CLIENT_ID) return json({ error: "잘못된 클라이언트" }, 401, cors);
+        if (info.email_verified !== "true" && info.email_verified !== true) return json({ error: "이메일 미인증 계정" }, 401, cors);
+        if (!info.email || !String(info.email).endsWith("@" + AUTH_DOMAIN)) return json({ error: "@" + AUTH_DOMAIN + " 계정만 허용됩니다" }, 403, cors);
+        const token = await authIssue(info.email, env);
+        return json({ ok: true, token: token, email: info.email, expiresIn: AUTH_HOURS * 3600 }, 200, cors);
+      } catch (e) {
+        return json({ error: "인증 처리 오류: " + e.message }, 500, cors);
+      }
+    }
+    {
+      const authz = request.headers.get("Authorization") || "";
+      const tok = authz.indexOf("Bearer ") === 0 ? authz.slice(7) : (url.searchParams.get("atk") || "");
+      const who = await authVerify(tok, env);
+      if (!who) return json({ error: "unauthorized", hint: "@storelink.io 로그인 후 이용하세요" }, 401, cors);
+    }
+    // ═════════════════════════════════════════════════════════
 
     // ── 공유 제외목록 (KV) : 여러 컴퓨터에서 누적 공유 ──
     //   GET  /exclusions          → 저장된 제외목록(JSON) 반환

@@ -6524,6 +6524,38 @@ window.__pointailInitApp = function() {
     STORAGE_KEY: 'pt_auth_user',
     SESSION_HOURS: 12,
   };
+  const PT_WORKER_ORIGIN = 'https://pointail-api.zeroho.workers.dev';
+
+  // ── 🔐 전역 fetch 래퍼 (2026-09-16 보안 강화) ──────────────
+  //  모든 모듈이 쓰는 window.fetch를 감싸서, Worker(pointail-api) 호출에만
+  //  세션 토큰(Authorization)을 자동 첨부하고 401이면 재로그인시킨다.
+  (function () {
+    const origFetch = window.fetch;
+    window.fetch = function (input, init) {
+      try {
+        const u = typeof input === 'string' ? input : ((input && input.url) || '');
+        if (u.indexOf(PT_WORKER_ORIGIN) === 0 && u.indexOf('/auth/login') < 0) {
+          let s = null;
+          try { s = JSON.parse(localStorage.getItem(AUTH_CONFIG.STORAGE_KEY) || 'null'); } catch (e) {}
+          if (s && s.tk) {
+            init = init || {};
+            const h = new Headers(init.headers || (typeof input !== 'string' && input.headers) || undefined);
+            h.set('Authorization', 'Bearer ' + s.tk);
+            init.headers = h;
+          }
+          return origFetch.call(window, input, init).then(function (r) {
+            if (r.status === 401) {
+              console.warn('[Pointail Auth] Worker 401 — 세션 만료, 재로그인 필요');
+              try { localStorage.removeItem(AUTH_CONFIG.STORAGE_KEY); } catch (e) {}
+              location.reload();
+            }
+            return r;
+          });
+        }
+      } catch (e) {}
+      return origFetch.call(window, input, init);
+    };
+  })();
   
   // ── 상태 표시 헬퍼 ─────────────────────────────────────
   function setStatus(msg, isError) {
@@ -6691,9 +6723,22 @@ window.__pointailInitApp = function() {
       return;
     }
     
-    // 세션 저장 + 앱 표시
+    // 세션 저장 + 🔐 Worker 세션 토큰 발급 + 앱 표시
     const session = saveAuthSession(userInfo);
-    showApp(session);
+    setStatus('서버 인증 중...');
+    fetch(PT_WORKER_ORIGIN + '/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: response.credential })
+    })
+      .then(function(r){ return r.json().catch(function(){ return {}; }); })
+      .then(function(j){
+        if (j && j.token) {
+          session.tk = j.token;
+          try { localStorage.setItem(AUTH_CONFIG.STORAGE_KEY, JSON.stringify(session)); } catch(e) {}
+        }
+        showApp(session);
+      })
+      .catch(function(){ showApp(session); });
   }
   
   // 전역 노출 (Google SDK가 호출)

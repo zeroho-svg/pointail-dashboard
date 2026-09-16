@@ -218,7 +218,8 @@
   function setStatus(m, err){ var el=document.getElementById('auth-status'); if(!el) return; el.textContent=m; el.classList.toggle('error', !!err); }
   function decodeJwt(t){ try{ var b=t.split('.')[1].replace(/-/g,'+').replace(/_/g,'/');
     return JSON.parse(decodeURIComponent(atob(b).split('').map(function(c){return '%'+('00'+c.charCodeAt(0).toString(16)).slice(-2);}).join(''))); }catch(e){ return null; } }
-  function save(u){ var s={email:u.email,name:u.name,picture:u.picture,expiresAt:Date.now()+CFG.HOURS*3600*1000};
+  var WORKER_A = 'https://pointail-api.zeroho.workers.dev/';
+  function save(u, tk){ var s={email:u.email,name:u.name,picture:u.picture,tk:tk||'',expiresAt:Date.now()+CFG.HOURS*3600*1000};
     try{ localStorage.setItem(CFG.KEY, JSON.stringify(s)); }catch(e){} return s; }
   function get(){ try{ var s=JSON.parse(localStorage.getItem(CFG.KEY)||'null'); if(!s) return null;
     if(Date.now()>s.expiresAt){ localStorage.removeItem(CFG.KEY); return null; } return s; }catch(e){ return null; } }
@@ -241,7 +242,12 @@
       return;
     }
     if(u.email_verified===false){ setStatus('이메일 인증이 완료되지 않은 계정입니다.', true); return; }
-    showApp(save(u));
+    /* 🔐 Worker 세션 토큰 발급 (API 인증용) */
+    setStatus('서버 인증 중...');
+    fetch(WORKER_A+'auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({credential:resp.credential})})
+      .then(function(r){ return r.json().catch(function(){ return {}; }); })
+      .then(function(j){ showApp(save(u, j && j.token || '')); })
+      .catch(function(){ showApp(save(u, '')); });
   };
   function initGsi(){
     if(!window.google||!google.accounts||!google.accounts.id) return false;
@@ -319,11 +325,23 @@
   }
   function rangeCost(){ var t=0; monthsInRange().forEach(function(k){ t+=monthCost(k); }); return t; }
 
+  /* ── 🔐 인증 fetch (Worker 세션 토큰 자동 첨부, 401 시 재로그인) ── */
+  function authTk(){ try{ return (JSON.parse(localStorage.getItem('pz_auth_user')||'null')||{}).tk||''; }catch(e){ return ''; } }
+  function wfetch(path, opts){
+    opts = opts || {};
+    var tk = authTk();
+    if(tk){ opts.headers = Object.assign({}, opts.headers||{}, { 'Authorization': 'Bearer '+tk }); }
+    return fetch(WORKER+path, opts).then(function(r){
+      if(r.status===401){ try{ localStorage.removeItem('pz_auth_user'); }catch(e){} location.reload(); throw new Error('unauthorized'); }
+      return r;
+    });
+  }
+
   /* ── 데이터 로드 ── */
   function load(cb){
     Promise.all([
-      fetch(WORKER+'pz/snapshot?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json();}),
-      fetch(WORKER+'pz/costs?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json();})
+      wfetch('pz/snapshot?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json();}),
+      wfetch('pz/costs?t='+Date.now(),{cache:'no-store'}).then(function(r){return r.json();})
     ]).then(function(res){
       ROWS=(res[0]&&res[0].rows)||[]; META=(res[0]&&res[0].meta)||{}; COSTS=res[1]||{};
       if(cb) cb();
@@ -334,7 +352,7 @@
   function staleMs(){ return META.updatedAt? (Date.now()-Date.parse(META.updatedAt)) : Infinity; }
   function refresh(force){
     var b=document.getElementById('badgeTxt'); if(b) b.textContent='⏳ 동기화 중… (최대 2분)';
-    fetch(WORKER+'pz/refresh?force='+(force?'1':'0'),{method:'POST'}).then(function(r){return r.json();})
+    wfetch('pz/refresh?force='+(force?'1':'0'),{method:'POST'}).then(function(r){return r.json();})
       .then(function(){ load(render); })
       .catch(function(){ if(b) b.textContent='⚠️ 동기화 실패'; });
   }
@@ -837,7 +855,7 @@
         COSTS[m][id]=parseInt(String(el.value).replace(/[^\d]/g,''),10)||0;
       });
       var msg=document.getElementById('costMsg'); msg.textContent='저장 중…';
-      fetch(WORKER+'pz/costs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(COSTS)})
+      wfetch('pz/costs',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(COSTS)})
         .then(function(r){return r.json();})
         .then(function(j){ if(j.ok){ render(); document.getElementById('costMsg').textContent='✅ 저장 완료 ('+new Date().toTimeString().slice(0,5)+')'; } else msg.textContent='⚠️ 저장 실패'; })
         .catch(function(){ msg.textContent='⚠️ 저장 실패 — 네트워크 확인'; });
