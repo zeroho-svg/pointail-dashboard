@@ -76,7 +76,11 @@
     function setMsg(m, err) { S.msg = m; S.msgErr = !!err; render(); if (m) setTimeout(function () { if (S.msg === m) { S.msg = ''; render(); } }, 4000); }
 
     function loadUsers() { return api('admin/users').then(function (j) { S.doc = j; }); }
-    function loadLogs() { return api('admin/logs').then(function (j) { S.logs = j.logs || []; }); }
+    function loadLogs() { return api('admin/logs').then(function (j) {
+      // 대시보드 분리 이전(dh 없음) 기록은 소속 불명 → 제외 (양쪽에 중복 노출 방지)
+      S.logs = (j.logs || []).filter(function (l) { return !!l.dh; });
+      S.logsLegacy = (j.logs || []).length - S.logs.length;
+    }); }
     function loadStats() { return api('admin/stats?days=30').then(function (j) { S.stats = j.days || {}; }); }
 
     /* ── 사용자 탭 ── */
@@ -175,7 +179,7 @@
       var h = '<div style="display:flex;gap:8px;margin-bottom:12px">' +
         '<select id="ptaLogU"><option value="">전체 사용자</option>' + Object.keys(users).map(function (e) { return '<option' + (S.logU === e ? ' selected' : '') + '>' + esc(e) + '</option>'; }).join('') + '</select>' +
         '<select id="ptaLogA"><option value="">전체 동작</option>' + Object.keys(ACT_BADGE).map(function (a) { return '<option value="' + a + '"' + (S.logA === a ? ' selected' : '') + '>' + ACT_BADGE[a][0] + '</option>'; }).join('') + '</select>' +
-        '<span class="pta-mut" style="align-self:center;font-size:11.5px">' + f(list.length) + '건 · 최근 400건 보관</span></div>';
+        '<span class="pta-mut" style="align-self:center;font-size:11.5px">' + f(list.length) + '건 · 최근 400건 보관' + (S.logsLegacy ? ' · 분리 이전 기록 ' + f(S.logsLegacy) + '건 제외' : '') + '</span></div>';
       list.slice(0, 120).forEach(function (l) {
         var b = ACT_BADGE[l.a] || [l.a, 'pta-gry'];
         h += '<div class="pta-log"><span class="t">' + fdt(l.t) + '</span><span class="w">' + esc(l.e) + '</span><span class="pta-b ' + b[1] + '">' + b[0] + '</span><span class="pta-mut">' + esc(l.d || '') + '</span></div>';
