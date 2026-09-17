@@ -176,7 +176,7 @@
   <div class="hdr">
     <div>
       <h1>🐶 퍼그제로 통합 대시보드</h1>
-      <div class="sub">퍼그제로 캠페인(PUG_ZERO) · Worker 자동 수집 · <span id="syncTxt">동기화 확인 중…</span></div>
+      <div class="sub">퍼그제로 캠페인(PUG_ZERO) · 매출 부가세 포함(+VAT) · Worker 자동 수집 · <span id="syncTxt">동기화 확인 중…</span></div>
     </div>
     <div style="display:flex;gap:8px;align-items:flex-start">
       <button class="sync" id="themeBtn" onclick="PZ.theme()" style="background:#fff;border-color:var(--line);color:var(--ink2)">🌙 어둡게</button>
@@ -423,7 +423,7 @@
     return '<span class="badge '+cls+'">'+esc(s)+'</span>';
   }
   function campRowsHTML(list, lim){
-    var h='<tr><th>No</th><th>캠페인</th><th>광고주</th><th>채널</th><th>상태</th><th>모집/선정/완료</th><th>생성일</th><th>매출</th></tr>';
+    var h='<tr><th>No</th><th>캠페인</th><th>광고주</th><th>채널</th><th>상태</th><th>모집/선정/완료</th><th>생성일</th><th>매출 (+VAT)</th></tr>';
     list.slice(0,lim).forEach(function(r){
       h+='<tr><td class="mutd">'+r.no+'</td><td style="text-align:left;max-width:250px;overflow:hidden;text-overflow:ellipsis"><b>'+esc(r.nm)+'</b></td><td>'+esc(r.corp||r.store||'-')+'</td><td>'+esc(r.chnnl||'-')+'</td><td>'+stBadge(r.state)+'</td><td class="mutd">'+f(r.mo)+'/'+f(r.sel)+'/'+f(r.msn)+'명</td><td class="mutd">'+d10(r).slice(5)+'</td><td>'+(CANCEL[r.state]? '<span class="mutd">제외</span>' : f(sales(r)/1e4)+'만')+'</td></tr>';
     });
@@ -469,7 +469,7 @@
     var prog=(A.st['모집중']||0)+(A.st['추가모집']||0);
     var h='';
     h+='<div class="row k5">';
-    h+=kpi('📈','매출', '<span style="color:var(--blue)">'+eok(A.tot)+'</span>', f(A.ok.length)+'건'+(delta!=null? ' · 이번 달 '+eok(mNow.sales)+' <span class="'+(delta>=0?'up':'dn')+'">'+(delta>=0?'▲':'▼')+Math.abs(delta)+'%</span>':''));
+    h+=kpi('📈','매출 (+VAT)', '<span style="color:var(--blue)">'+eok(A.tot)+'</span>', f(A.ok.length)+'건'+(delta!=null? ' · 이번 달 '+eok(mNow.sales)+' <span class="'+(delta>=0?'up':'dn')+'">'+(delta>=0?'▲':'▼')+Math.abs(delta)+'%</span>':''));
     h+=kpi('💸','비용 합계','<span style="color:var(--amber)">'+eok(A.costAll)+'</span>','수수료 '+eok(A.fee)+' + 마케팅비 '+(A.mkt? eok(A.mkt):'0'));
     h+='<div class="card hero"><div class="lb">💎 영업이익</div><div class="v">'+eok(A.op)+'</div><div class="s">포인트 수익 '+eok(A.prf)+' − 비용 '+eok(A.costAll)+'</div></div>';
     h+=kpi('📊','이익률', rate.toFixed(1)+'%','영업이익 ÷ 매출'+(A.mkt? '' : ' · ⚠ 마케팅비 미입력'));
@@ -492,8 +492,8 @@
         '<div class="mamt">'+(v.n? f(v.n)+'건':'–')+'</div></div>';
     });
     h+='<div class="row k2">';
-    h+='<div class="card"><h3>📊 월별 매출 · 비용 · 영업이익</h3><div class="td">선택 기간 · 취소 제외 · 막대 호버 시 상세</div><div class="chart" id="homeChart">'+bars+'</div>'+
-       '<div class="legend"><span><i style="background:var(--blue)"></i>매출</span><span><i style="background:var(--amber)"></i>비용(수수료+마케팅비)</span><span><i style="background:var(--green)"></i>영업이익</span></div></div>';
+    h+='<div class="card"><h3>📊 월별 매출(+VAT) · 비용 · 영업이익</h3><div class="td">선택 기간 · 취소 제외 · 막대 호버 시 상세 · <b>매출은 부가세 포함(+VAT)</b></div><div class="chart" id="homeChart">'+bars+'</div>'+
+       '<div class="legend"><span><i style="background:var(--blue)"></i>매출 (+VAT)</span><span><i style="background:var(--amber)"></i>비용(수수료+마케팅비)</span><span><i style="background:var(--green)"></i>영업이익</span></div></div>';
     /* 파이프라인 */
     var totalN=A.rows.length||1;
     function pctS(n){ return Math.round(n/totalN*100)+'%'; }
@@ -519,12 +519,12 @@
       return '<div class="hrow"><span class="nm">'+esc(x.k)+'</span><div class="trk"><div class="fill" style="width:'+Math.max(2,Math.round(x.v.sales/chMax*100))+'%;background:'+(CH_COLOR[x.k]||'#8a94a6')+'"></div></div><span class="val">'+eok(x.v.sales)+' <span class="pc">'+pct+'% · '+f(x.v.n)+'건</span></span></div>';
     }).join('');
     var advArr=Object.keys(A.advAgg).map(function(k){return {k:k,v:A.advAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
-    var advH='<table><tr><th>광고주</th><th>캠페인</th><th>진행중</th><th>매출</th><th>비중</th></tr>'+
+    var advH='<table><tr><th>광고주</th><th>캠페인</th><th>진행중</th><th>매출 (+VAT)</th><th>비중</th></tr>'+
       advArr.slice(0,5).map(function(x){
         return '<tr><td><b>'+esc(x.k)+'</b></td><td>'+f(x.v.n)+'건</td><td><span class="badge '+(x.v.prog?'bg-blue':'bg-gray')+'">'+x.v.prog+'</span></td><td><b>'+eok(x.v.sales)+'</b></td><td class="mutd">'+(A.tot? (x.v.sales/A.tot*100).toFixed(1):0)+'%</td></tr>';
       }).join('')+'</table>';
     h+='<div class="row k2e">'+
-      '<div class="card"><h3>🛍️ 채널별 매출</h3><div class="td">선택 기간 · 취소 제외</div>'+chH+'</div>'+
+      '<div class="card"><h3>🛍️ 채널별 매출 (+VAT)</h3><div class="td">선택 기간 · 취소 제외</div>'+chH+'</div>'+
       '<div class="card"><h3>🏢 광고주 TOP 5</h3><div class="td">캠페인 신청 수 · 매출 — 전체는 광고주 탭</div>'+advH+'</div></div>';
     document.getElementById('tab-home').innerHTML=h;
     hookTip(A);
@@ -550,7 +550,7 @@
     var h='<div class="banner"><h4>📅 '+k.replace('-','년 ')+'월 세부 내역</h4>'+
       '<div class="bd">캠페인 '+f(list.length)+'건 · 광고주 '+f(Object.keys(advSet).length)+'곳'+who+'</div>'+
       '<div class="bchips">'+
-      '<div class="bchip"><div class="l">매출</div><div class="n">'+eok(v.sales)+'</div></div>'+
+      '<div class="bchip"><div class="l">매출 (+VAT)</div><div class="n">'+eok(v.sales)+'</div></div>'+
       '<div class="bchip"><div class="l">포인트 수익</div><div class="n">'+eok(v.profit)+'</div></div>'+
       '<div class="bchip"><div class="l">카드수수료</div><div class="n neg">-'+eok(fee)+'</div></div>'+
       '<div class="bchip"><div class="l">마케팅비용</div><div class="n '+(mkt?'neg':'mutd')+'">'+(mkt? '-'+eok(mkt):'미입력')+(mDetail? ' <span style="font-size:10px;color:var(--mut);font-weight:600">'+mDetail+'</span>':'')+'</div></div>'+
@@ -562,9 +562,9 @@
       (list.length>8 && OPENM[k]!=='all'? '<span class="more" onclick="PZ.moreM(\''+k+'\')">＋ 나머지 '+f(list.length-8)+'건 더 보기</span> · ':'')+
       '<span class="more" onclick="PZ.csvMonth(\''+k+'\')">⬇ '+(+k.slice(5,7))+'월 캠페인 CSV</span>'+
       '</div><div>'+
-      '<div class="bd" style="margin-bottom:6px"><b>채널별 소계</b></div><table><tr><th>채널</th><th>건수</th><th>매출</th><th>비중</th></tr>'+
+      '<div class="bd" style="margin-bottom:6px"><b>채널별 소계</b></div><table><tr><th>채널</th><th>건수</th><th>매출 (+VAT)</th><th>비중</th></tr>'+
       chArr.slice(0,5).map(function(x){ return '<tr><td>'+esc(x.k)+'</td><td class="mutd">'+f(x.v.n)+'건</td><td>'+eok(x.v.s)+'</td><td class="mutd">'+(v.sales? Math.round(x.v.s/v.sales*100):0)+'%</td></tr>'; }).join('')+'</table>'+
-      '<div class="bd" style="margin:12px 0 6px"><b>광고주 TOP 3</b></div><table><tr><th>광고주</th><th>캠페인</th><th>매출</th></tr>'+
+      '<div class="bd" style="margin:12px 0 6px"><b>광고주 TOP 3</b></div><table><tr><th>광고주</th><th>캠페인</th><th>매출 (+VAT)</th></tr>'+
       advArr.slice(0,3).map(function(x){ return '<tr><td>'+esc(x.k)+'</td><td class="mutd">'+f(x.v.n)+'건</td><td>'+eok(x.v.s)+'</td></tr>'; }).join('')+'</table>'+
       '</div></div></div>';
     return h;
@@ -583,20 +583,20 @@
     return '<div class="banner" style="border-left-color:'+(CH_COLOR[ch]||'#8a94a6')+'"><h4>'+esc(ch)+' 세부 내역</h4>'+
       '<div class="bd">선택 기간 '+f(v.n)+'건 · 광고주 '+f(advArr.length)+'곳 · 평균 결제 '+f(avgPay)+'원/명</div>'+
       '<div class="bchips">'+
-      '<div class="bchip"><div class="l">매출</div><div class="n">'+eok(v.sales)+'</div></div>'+
+      '<div class="bchip"><div class="l">매출 (+VAT)</div><div class="n">'+eok(v.sales)+'</div></div>'+
       '<div class="bchip"><div class="l">포인트 수익</div><div class="n">'+eok(v.profit)+'</div></div>'+
       '<div class="bchip"><div class="l">모집 / 선정</div><div class="n">'+f(v.mo)+' / '+f(v.sel)+'명</div></div>'+
       '<div class="bchip"><div class="l">진행중</div><div class="n">'+f(v.prog)+'건</div></div></div>'+
       '<div class="bd" style="margin-bottom:6px"><b>월별 추이</b></div><div class="scroll"><table>'+head+mline+cline+'</table></div>'+
-      '<div class="bd" style="margin:12px 0 6px"><b>이 채널 광고주 TOP 3</b></div><table><tr><th>광고주</th><th>캠페인</th><th>매출</th><th>비중</th></tr>'+
+      '<div class="bd" style="margin:12px 0 6px"><b>이 채널 광고주 TOP 3</b></div><table><tr><th>광고주</th><th>캠페인</th><th>매출 (+VAT)</th><th>비중</th></tr>'+
       advArr.slice(0,3).map(function(x){ return '<tr><td>'+esc(x.k)+'</td><td class="mutd">'+f(x.v.n)+'건</td><td>'+eok(x.v.s)+'</td><td class="mutd">'+(v.sales? (x.v.s/v.sales*100).toFixed(1):0)+'%</td></tr>'; }).join('')+'</table>'+
       '<span class="more" onclick="PZ.csvCh(\''+esc(ch)+'\')">⬇ '+esc(ch)+' 캠페인 CSV</span></div>';
   }
   function renderRev(A){
     var mons=monthsInRange().slice().reverse();
     var h='<div class="card" style="margin-bottom:14px"><h3>💰 월별 손익 상세</h3>'+
-      '<div class="td">매출 = 결제금액×모집인원(취소 제외) · 영업이익 = 포인트 수익 − 카드수수료(3.2%) − 마케팅비용 · 💡 <b>월 행 클릭</b> 시 세부 배너</div>'+
-      '<div class="scroll"><table><tr><th>월</th><th>매출</th><th>건수</th><th>포인트 수익</th><th>카드수수료</th><th>마케팅비용</th><th>영업이익</th><th>이익률</th></tr>';
+      '<div class="td">매출 = 결제금액×모집인원(취소 제외) · <b>부가세 포함(+VAT)</b> · 영업이익 = 포인트 수익 − 카드수수료(3.2%) − 마케팅비용 · 💡 <b>월 행 클릭</b> 시 세부 배너</div>'+
+      '<div class="scroll"><table><tr><th>월</th><th>매출 (+VAT)</th><th>건수</th><th>포인트 수익</th><th>카드수수료</th><th>마케팅비용</th><th>영업이익</th><th>이익률</th></tr>';
     var thisM=new Date().toISOString().slice(0,7);
     var shown=0;
     mons.forEach(function(k){
@@ -617,7 +617,7 @@
 
     var chArr=Object.keys(A.chAgg).map(function(k){return {k:k,v:A.chAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
     h+='<div class="row k2e"><div class="card"><h3>🛍️ 채널별 손익</h3><div class="td">💡 <b>채널 행 클릭</b> 시 세부 내역 배너</div>'+
-      '<div class="scroll"><table><tr><th>채널</th><th>매출</th><th>건수</th><th>포인트 수익</th><th>비중</th></tr>';
+      '<div class="scroll"><table><tr><th>채널</th><th>매출 (+VAT)</th><th>건수</th><th>포인트 수익</th><th>비중</th></tr>';
     chArr.forEach(function(x){
       var open=!!OPENCH[x.k];
       h+='<tr class="clickable'+(open?' open':'')+'" onclick="PZ.togCh(\''+esc(x.k)+'\')"><td><span class="caret">▶</span><i style="display:inline-block;width:9px;height:9px;border-radius:3px;background:'+(CH_COLOR[x.k]||'#8a94a6')+';margin-right:6px"></i>'+esc(x.k)+'</td>'+
@@ -678,7 +678,7 @@
         '<div class="mlbl"'+(on?' style="color:var(--blue)"':'')+'>'+b.lbl+(on?' ✓':'')+'</div>'+
         '<div class="mamt">'+(act.length? Math.round(b.n/act.length*100):0)+'%</div></div>';
     });
-    h+='</div><div class="s" style="margin-top:8px">호버 시 구간 광고주 수·매출 합계 · 막대 클릭 = 그 구간만 필터(재클릭 해제) · 입력창에 한 칸만 넣으면 "N회 이상"</div></div>';
+    h+='</div><div class="s" style="margin-top:8px">호버 시 구간 광고주 수·매출 합계(+VAT) · 막대 클릭 = 그 구간만 필터(재클릭 해제) · 입력창에 한 칸만 넣으면 "N회 이상"</div></div>';
 
     /* 리스트 (검색·횟수 필터·정렬) */
     var arr=all;
@@ -693,8 +693,8 @@
     var fLabel = filterOn? ('신청 '+CNTF.min+(CNTF.max>=9999? '회 이상' : CNTF.max===CNTF.min? '회' : '~'+CNTF.max+'회')) : '';
     h+='<div class="card"><div class="toolrow"><div><h3>🏢 광고주별 현황</h3><div class="td" style="margin:0">선택 기간 · 광고주 '+f(arr.length)+'곳 · 💡 행 클릭 시 캠페인 리스트 · 열 클릭 정렬</div></div>'+
       '<div style="display:flex;gap:8px"><input class="search" placeholder="🔍 광고주 검색" value="'+esc(ADVQ)+'" oninput="PZ.advSearch(this.value)"><button class="btn ghost" onclick="PZ.csvAdv()">⬇ CSV</button></div></div>';
-    if(filterOn) h+='<div class="chips" style="margin-bottom:10px;align-items:center"><span class="badge bg-blue" style="font-size:12px;padding:5px 12px">🔢 '+fLabel+' 필터 — '+f(arr.length)+'곳 · 매출 합계 '+eok(fSales)+'</span><span class="chip" onclick="PZ.cntReset()">✕ 필터 해제 (전체 '+f(all.length)+'곳)</span></div>';
-    h+='<div class="scroll"><table><tr><th class="sortable" onclick="PZ.advSort(\'name\')">#&nbsp;광고주'+sArrow('name')+'</th><th class="sortable" onclick="PZ.advSort(\'cnt\')">신청 횟수'+sArrow('cnt')+'</th><th>진행중</th><th>선정완료</th><th>종료</th><th>취소</th><th>모집/선정 인원</th><th class="sortable" onclick="PZ.advSort(\'sales\')">매출'+sArrow('sales')+'</th><th>비중</th></tr>';
+    if(filterOn) h+='<div class="chips" style="margin-bottom:10px;align-items:center"><span class="badge bg-blue" style="font-size:12px;padding:5px 12px">🔢 '+fLabel+' 필터 — '+f(arr.length)+'곳 · 매출 합계(+VAT) '+eok(fSales)+'</span><span class="chip" onclick="PZ.cntReset()">✕ 필터 해제 (전체 '+f(all.length)+'곳)</span></div>';
+    h+='<div class="scroll"><table><tr><th class="sortable" onclick="PZ.advSort(\'name\')">#&nbsp;광고주'+sArrow('name')+'</th><th class="sortable" onclick="PZ.advSort(\'cnt\')">신청 횟수'+sArrow('cnt')+'</th><th>진행중</th><th>선정완료</th><th>종료</th><th>취소</th><th>모집/선정 인원</th><th class="sortable" onclick="PZ.advSort(\'sales\')">매출 (+VAT)'+sArrow('sales')+'</th><th>비중</th></tr>';
     arr.slice(0,ADVLIMIT).forEach(function(x,i){
       var open=!!OPENADV[x.k];
       h+='<tr class="clickable'+(open?' open':'')+'" onclick="PZ.togAdv(\''+esc(x.k).replace(/'/g,"\\'")+'\')"><td><span class="caret">▶</span><span class="mutd">'+(i+1)+'</span> <b>'+esc(x.k)+'</b></td>'+
@@ -719,7 +719,7 @@
       var col=ev.target && ev.target.closest? ev.target.closest('[data-cb]'):null;
       if(!col){ tip.style.display='none'; return; }
       var b=buckets[+col.getAttribute('data-cb')];
-      tip.innerHTML='<b>신청 '+b.lbl+'</b><br>광고주 <b>'+f(b.n)+'곳</b><br>매출 합계 '+f(b.sales/1e4)+'만원';
+      tip.innerHTML='<b>신청 '+b.lbl+'</b><br>광고주 <b>'+f(b.n)+'곳</b><br>매출 합계(+VAT) '+f(b.sales/1e4)+'만원';
       tip.style.display='block';
       var w=tip.offsetWidth,hh=tip.offsetHeight,x=ev.clientX+14,y=ev.clientY-hh/2;
       if(x+w>innerWidth-8) x=ev.clientX-w-14; if(y<8)y=8;
@@ -756,7 +756,7 @@
     var items=costItems(), mons=monthsInRange().slice().reverse();
     var thisM=new Date().toISOString().slice(0,7);
     var h='<div class="row k2"><div class="card"><div class="toolrow"><div><h3>💸 마케팅 비용 입력 <span class="tag hand">수기</span></h3>'+
-      '<div class="td" style="margin:0">항목별 · 월별 입력 + 담당자·실무자 기록 → 저장 시 전 탭 손익에 자동 반영 (모든 PC 공유)</div></div></div>'+
+      '<div class="td" style="margin:0">항목별 · 월별 입력 + 담당자·실무자 기록 → 저장 시 전 탭 손익에 자동 반영 (모든 PC 공유) · 비용률·ROAS는 부가세 포함 매출 기준</div></div></div>'+
       '<div class="scroll"><table><tr><th>월</th>';
     items.forEach(function(it){ h+='<th>'+esc(it.name)+'</th>'; });
     h+='<th>합계</th><th>비용률</th><th>ROAS</th><th>담당자</th><th>실무자</th><th>마지막 수정</th></tr>';
@@ -815,7 +815,7 @@
       if(!k){ tip.style.display='none'; return; }
       var v=A.mAgg[k]||{n:0,sales:0,profit:0,mo:0,sel:0};
       var mkt=monthCost(k), fee=v.sales*FEE, op=v.profit-fee-mkt;
-      tip.innerHTML='<b>'+k.replace('-','.')+'</b><br>매출 <b>'+f(v.sales/1e4)+'만원</b> · '+f(v.n)+'건<br>포인트 수익 '+f(v.profit/1e4)+'만원<br>수수료 '+f(fee/1e4)+'만 · 마케팅비 '+f(mkt/1e4)+'만<br>영업이익 <b>'+f(op/1e4)+'만원</b><br>모집 '+f(v.mo)+'명 · 선정 '+f(v.sel)+'명'+(mkt? '<br>ROAS <b>'+f(v.sales/mkt*100)+'%</b>':'');
+      tip.innerHTML='<b>'+k.replace('-','.')+'</b><br>매출(+VAT) <b>'+f(v.sales/1e4)+'만원</b> · '+f(v.n)+'건<br>포인트 수익 '+f(v.profit/1e4)+'만원<br>수수료 '+f(fee/1e4)+'만 · 마케팅비 '+f(mkt/1e4)+'만<br>영업이익 <b>'+f(op/1e4)+'만원</b><br>모집 '+f(v.mo)+'명 · 선정 '+f(v.sel)+'명'+(mkt? '<br>ROAS <b>'+f(v.sales/mkt*100)+'%</b>':'');
       tip.style.display='block';
       var w=tip.offsetWidth,hh=tip.offsetHeight,x=ev.clientX+14,y=ev.clientY-hh/2;
       if(x+w>innerWidth-8) x=ev.clientX-w-14; if(y<8)y=8; if(y+hh>innerHeight-8)y=innerHeight-hh-8;
@@ -832,7 +832,7 @@
   function campCsvLines(list){
     return list.map(function(r){ return [r.no,'"'+String(r.nm||'').replace(/"/g,'""')+'"','"'+String(r.corp||r.store||'').replace(/"/g,'""')+'"',r.chnnl||'',r.state,r.mo||0,r.sel||0,r.msn||0,d10(r),CANCEL[r.state]?0:sales(r),profit(r)].join(','); });
   }
-  var CAMP_HEAD='캠페인번호,캠페인명,광고주,채널,상태,모집,선정,미션완료,생성일,매출(원),포인트수익(원)';
+  var CAMP_HEAD='캠페인번호,캠페인명,광고주,채널,상태,모집,선정,미션완료,생성일,매출(원·VAT포함),포인트수익(원)';
 
   /* ── 전역 API ── */
   /* ── 🌓 다크모드 (localStorage — 컴퓨터별 개인 설정) ── */
@@ -930,10 +930,10 @@
     csvAdv: function(){ var A=agg(); var arr=Object.keys(A.advAgg).map(function(k){return {k:k,v:A.advAgg[k]};}).sort(function(a,b){return b.v.sales-a.v.sales;});
       if(CNTF.min!=null) arr=arr.filter(function(x){return x.v.cnt>=CNTF.min && x.v.cnt<=CNTF.max;});
       if(ADVQ){ var q=ADVQ.toLowerCase(); arr=arr.filter(function(x){return x.k.toLowerCase().indexOf(q)>=0;}); }
-      dlCsv('퍼그제로_광고주별.csv','광고주,신청횟수(취소제외),진행중,선정완료,종료,취소,모집인원,선정인원,매출(원)',
+      dlCsv('퍼그제로_광고주별.csv','광고주,신청횟수(취소제외),진행중,선정완료,종료,취소,모집인원,선정인원,매출(원·VAT포함)',
         arr.map(function(x){return ['"'+x.k.replace(/"/g,'""')+'"',x.v.cnt,x.v.prog,x.v.sel,x.v.close,x.v.cancel,x.v.moT,x.v.selT,x.v.sales].join(',');})); },
     csvMonthly: function(){ var A=agg();
-      dlCsv('퍼그제로_월별손익.csv','월,매출(원),건수,포인트수익(원),카드수수료(원),마케팅비용(원),영업이익(원)',
+      dlCsv('퍼그제로_월별손익.csv','월,매출(원·VAT포함),건수,포인트수익(원),카드수수료(원),마케팅비용(원),영업이익(원)',
         monthsInRange().map(function(k){ var v=A.mAgg[k]||{n:0,sales:0,profit:0}; var mkt=monthCost(k), fee=Math.round(v.sales*FEE);
           return [k,v.sales,v.n,v.profit,fee,mkt,v.profit-fee-mkt].join(','); })); }
   };
