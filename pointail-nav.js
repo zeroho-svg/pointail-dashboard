@@ -44,17 +44,30 @@
     });
     if (click) {
       var g = GROUPS.filter(function (x) { return x.key === key; })[0];
-      // 기본 진입 탭(defaultId)이 지정돼 있으면 우선 클릭
-      if (g.defaultId) {
-        var db = document.getElementById(g.defaultId);
-        if (db && db.classList.contains('tab')) { db.click(); return; }
+      // [v9 2026-09-17] 권한에 따라 하위 버튼이 없을 수 있다(예: 관리 그룹의 「사용자·통계」는 ADMIN 이상만 생성).
+      //  · defaultId가 존재하지 않으면 건너뛰고 ids 순서대로 "실제 존재하는" 버튼을 클릭한다.
+      //  · 토글 그룹 버튼(tab-group-btn: 데이터 관리·DB 조회·설정)도 유효한 진입점으로 인정.
+      //  이 가드가 없으면 MEMBER/VIEWER가 ⚙️ 관리를 눌러도 아무 탭도 열리지 않는다.
+      var pick = function (id) {
+        var b = id && document.getElementById(id);
+        if (!b) return null;
+        if (b.classList.contains('tab') || b.classList.contains('tab-group-btn')) return b;
+        return null;
+      };
+      var target = g.defaultId ? pick(g.defaultId) : null;
+      if (!target) {
+        for (var i = 0; i < g.ids.length && !target; i++) target = pick(g.ids[i]);
       }
-      for (var i = 0; i < g.ids.length; i++) {
-        var b = document.getElementById(g.ids[i]);
-        if (b && b.classList.contains('tab')) { b.click(); return; }
+      if (target) {
+        target.click();
+        // 토글 그룹(데이터 관리·DB 조회·설정)은 하위 행만 펼칠 뿐 패널이 바뀌지 않는다
+        // → 첫 하위 탭까지 눌러 화면이 실제로 전환되게 한다.
+        if (target.classList.contains('tab-group-btn')) {
+          var srow = document.getElementById('strow-' + target.id.replace(/^tg-/, ''));
+          var first = srow && srow.querySelector('.subtab');
+          if (first) first.click();
+        }
       }
-      var any = document.getElementById(g.ids[0]);
-      if (any) any.click();
     }
   }
 
