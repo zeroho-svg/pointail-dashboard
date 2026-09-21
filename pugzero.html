@@ -32,13 +32,35 @@
   .seg{display:flex;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:4px;box-shadow:var(--shadow);flex-wrap:wrap}
   .seg button{border:none;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--ink2);padding:7px 14px;border-radius:8px;cursor:pointer}
   .seg button.on{background:#eaf1fe;color:var(--blue)}
+  /* 📅 날짜 설정 — 마우스오버 월 선택 패널 (연도 이동 + 월 다중선택) */
+  .pickwrap{position:relative}
+  .pickbtn{display:flex;align-items:center;gap:7px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:9px 15px;box-shadow:var(--shadow);font:inherit;font-size:13px;font-weight:700;color:var(--ink);cursor:pointer}
+  .pickbtn .hint{font-size:11.5px;font-weight:600;color:var(--mut)}
+  .pickwrap:hover .pickbtn{border-color:var(--blue);color:var(--blue)}
+  .pickpanel{display:none;position:absolute;top:100%;left:0;z-index:80;padding-top:8px;min-width:352px}
+  .pickwrap:hover .pickpanel,.pickpanel:hover{display:block}
+  .pickbox{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 8px 28px rgba(16,24,40,.16);padding:12px 13px}
+  .pickyr{display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:9px}
+  .pickyr button{border:1px solid var(--line);background:var(--card);border-radius:8px;width:28px;height:28px;font:inherit;font-size:14px;color:var(--ink2);cursor:pointer}
+  .pickyr button:disabled{opacity:.3;cursor:default}
+  .pickyr b{font-size:14.5px;min-width:64px;text-align:center}
+  .pickms{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+  .pickms button{border:1px solid var(--line);background:var(--card);border-radius:8px;padding:8px 0;font:inherit;font-size:13px;font-weight:600;color:var(--ink2);cursor:pointer}
+  .pickms button:hover{border-color:var(--blue);color:var(--blue)}
+  .pickms button.on{background:#eaf1fe;border-color:var(--blue);color:var(--blue)}
+  .pickms button.none{opacity:.45}
+  .pickfast{display:flex;flex-wrap:wrap;gap:5px;margin:10px 0 0;padding-top:9px;border-top:1px solid var(--line)}
+  .pickfast button{border:1px solid var(--line);background:var(--card);border-radius:7px;padding:5px 10px;font:inherit;font-size:12px;font-weight:600;color:var(--ink2);cursor:pointer}
+  .pickfast button.on{background:#eaf1fe;border-color:var(--blue);color:var(--blue)}
+  .pickfoot{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:9px;font-size:11.5px;color:var(--mut)}
   .range{display:flex;align-items:center;gap:6px;background:var(--card);border:1px solid var(--line);border-radius:11px;padding:7px 12px;font-size:13px;box-shadow:var(--shadow);flex-wrap:wrap}
   .range input{border:1px solid var(--line);border-radius:7px;padding:4px 8px;font:inherit;font-size:12.5px;color:var(--ink)}
   .period .note{font-size:12px;color:var(--mut)}
 
   .row{display:grid;gap:14px;margin-bottom:14px}
-  .k5{grid-template-columns:repeat(5,1fr)} .k2{grid-template-columns:1.5fr 1fr} .k2e{grid-template-columns:1fr 1fr}
-  @media(max-width:1000px){.k5{grid-template-columns:repeat(2,1fr)}.k2,.k2e{grid-template-columns:1fr}}
+  .k5{grid-template-columns:repeat(5,1fr)} .k6{grid-template-columns:repeat(6,1fr)} .k2{grid-template-columns:1.5fr 1fr} .k2e{grid-template-columns:1fr 1fr}
+  @media(max-width:1400px){.k6{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:1000px){.k5,.k6{grid-template-columns:repeat(2,1fr)}.k2,.k2e{grid-template-columns:1fr}}
   .card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow)}
   .card h3{margin:0 0 3px;font-size:15px}
   .td{font-size:12px;color:var(--mut);margin-bottom:14px}
@@ -194,7 +216,10 @@
   </div>
 
   <div class="period">
-    <div class="seg" id="segBar"></div>
+    <div class="pickwrap" id="pickWrap">
+      <button class="pickbtn" id="pickBtn" type="button">📅 날짜 설정 <span class="hint">(마우스오버)</span></button>
+      <div class="pickpanel" id="pickPanel"><div class="pickbox" id="pickBox"></div></div>
+    </div>
     <div class="range">📅 기간 지정
       <input type="date" id="dFrom"> ~ <input type="date" id="dTo">
       <button class="btn sm" onclick="PZ.applyRange()">적용</button>
@@ -287,7 +312,8 @@
   var DEFAULT_ITEMS = [{id:'media',name:'매체비(광고)'},{id:'prod',name:'제작·기타'}];
 
   /* ── 기간 상태 ── */
-  var PERIOD = { preset:'year', from:null, to:null };
+  var PERIOD = { preset:'year', from:null, to:null, months:[] };   /* preset 'months' = 월 다중선택 */
+  var PICKYR = new Date().getFullYear();                            /* 날짜 설정 패널에서 보고 있는 연도 */
   var TAB='home', STFILTER='', ADVQ='', ADVSORT={k:'sales',d:-1}, ADVLIMIT=30, CAMPLIMIT=50, OPENM={}, OPENCH={}, OPENADV={};
   var CNTF={min:null,max:null};   /* 신청 횟수 필터 (취소 제외) */
 
@@ -301,24 +327,50 @@
   function isNew(){ return ROWS.length && ROWS[0].created !== undefined; }
 
   /* ── 기간 계산 ── */
-  function today(){ return new Date().toISOString().slice(0,10); }
+  /* ⚠️ toISOString()은 UTC 기준이라 KST(UTC+9)에서 하루 밀린다(9/1 → 8/31).
+     기간 계산은 반드시 로컬 기준 ld()를 쓴다. */
+  function ld(d){ return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-'+('0'+d.getDate()).slice(-2); }
+  function today(){ return ld(new Date()); }
+  function mEnd(k){ var y=+k.slice(0,4), m=+k.slice(5,7); return ld(new Date(y, m, 0)); }   /* 해당 월 말일 */
   function presetRange(p){
     var now=new Date(), y=now.getFullYear(), m=now.getMonth();
-    if(p==='month'){ return [new Date(y,m,1).toISOString().slice(0,10), today()]; }
-    if(p==='3m'){ var s=new Date(y,m-2,1); return [s.toISOString().slice(0,10), today()]; }
+    if(p==='month'){ return [ld(new Date(y,m,1)), today()]; }          /* 이번 달 1일 ~ 오늘 */
+    if(p==='3m'){ return [ld(new Date(y,m-2,1)), today()]; }
     if(p==='year'){ return [y+'-01-01', today()]; }
     if(p==='lastyear'){ return [(y-1)+'-01-01', (y-1)+'-12-31']; }
     if(p==='all'){ return ['2000-01-01', today()]; }
     return [PERIOD.from||'2000-01-01', PERIOD.to||today()];
   }
-  function curRange(){ return PERIOD.preset==='custom'? [PERIOD.from, PERIOD.to] : presetRange(PERIOD.preset); }
-  function inR(r){ var d=d10(r), rg=curRange(); return d && d>=rg[0] && d<=rg[1]; }
+  function selMonths(){ return (PERIOD.months||[]).slice().sort(); }
+  function curRange(){
+    if(PERIOD.preset==='months'){
+      var ms=selMonths(); if(!ms.length) return [today(), today()];
+      var hi=mEnd(ms[ms.length-1]), t=today();
+      return [ms[0]+'-01', hi>t? t : hi];
+    }
+    return PERIOD.preset==='custom'? [PERIOD.from, PERIOD.to] : presetRange(PERIOD.preset);
+  }
+  function inR(r){
+    if(PERIOD.preset==='months'){ var k=ym(r); return !!k && (PERIOD.months||[]).indexOf(k)>=0; }
+    var d=d10(r), rg=curRange(); return d && d>=rg[0] && d<=rg[1];
+  }
   function monthsInRange(){
+    if(PERIOD.preset==='months') return selMonths();
     var rg=curRange(), out=[], s=rg[0].slice(0,7), e=rg[1].slice(0,7);
     var y=+s.slice(0,4), m=+s.slice(5,7);
     while(true){ var k=y+'-'+('0'+m).slice(-2); out.push(k); if(k>=e) break; m++; if(m>12){m=1;y++;} if(out.length>60) break; }
     return out;
   }
+  /* 데이터가 있는 연도 범위(패널 연도 이동 한계) */
+  function dataYears(){
+    var lo=null, hi=null;
+    ROWS.forEach(function(r){ var k=ym(r); if(!k) return; var y=+k.slice(0,4); if(lo===null||y<lo) lo=y; if(hi===null||y>hi) hi=y; });
+    var ny=new Date().getFullYear();
+    if(lo===null){ lo=ny; hi=ny; }
+    if(hi<ny) hi=ny;
+    return [lo, hi];
+  }
+  function monthHasData(k){ for(var i=0;i<ROWS.length;i++){ if(ym(ROWS[i])===k) return true; } return false; }
 
   /* ── 비용(항목 커스터마이징) ── */
   function costItems(){
@@ -445,17 +497,43 @@
     var A=agg();
     renderHome(A); renderRev(A); renderAdv(A); renderCamp(A); renderCost(A);
   }
+  /* 📅 날짜 설정 패널 — 연도 이동 + 월 3열 그리드(다중선택) + 빠른 선택 */
   function renderSeg(){
+    var yr=dataYears(), lo=yr[0], hi=yr[1];
+    if(PICKYR<lo) PICKYR=lo; if(PICKYR>hi) PICKYR=hi;
+    var sel=PERIOD.months||[], isM=PERIOD.preset==='months';
+    var h='<div class="pickyr">'+
+      '<button type="button" onclick="PZ.pickYr(-1)"'+(PICKYR<=lo?' disabled':'')+'>‹</button>'+
+      '<b>'+PICKYR+'년</b>'+
+      '<button type="button" onclick="PZ.pickYr(1)"'+(PICKYR>=hi?' disabled':'')+'>›</button>'+
+      '</div><div class="pickms">';
+    for(var m=1;m<=12;m++){
+      var k=PICKYR+'-'+('0'+m).slice(-2);
+      var on=isM && sel.indexOf(k)>=0;
+      h+='<button type="button" class="'+(on?'on':'')+(monthHasData(k)?'':' none')+'" onclick="PZ.pickM(\''+k+'\')">'+m+'월</button>';
+    }
+    h+='</div>';
     var ps=[['month','이번 달'],['3m','최근 3개월'],['year','올해'],['lastyear','작년'],['all','전체']];
-    document.getElementById('segBar').innerHTML = ps.map(function(p){
-      return '<button class="'+(PERIOD.preset===p[0]?'on':'')+'" onclick="PZ.preset(\''+p[0]+'\')">'+p[1]+'</button>';
-    }).join('');
+    h+='<div class="pickfast">'+ps.map(function(p){
+      return '<button type="button" class="'+(PERIOD.preset===p[0]?'on':'')+'" onclick="PZ.preset(\''+p[0]+'\')">'+p[1]+'</button>';
+    }).join('')+'</div>';
+    h+='<div class="pickfoot"><span>'+(isM&&sel.length? '선택 '+sel.length+'개월 (중복 선택 가능)' : '월을 클릭하면 여러 개 선택됩니다')+'</span>'+
+       (isM&&sel.length? '<button type="button" class="btn sm ghost" onclick="PZ.pickClear()">선택 해제</button>':'')+'</div>';
+    document.getElementById('pickBox').innerHTML=h;
+    var lbl = isM&&sel.length? '📅 '+sel.length+'개월 선택' : '📅 날짜 설정';
+    document.getElementById('pickBtn').innerHTML = lbl+' <span class="hint">(마우스오버)</span>';
     var rg=curRange();
     document.getElementById('dFrom').value=rg[0]; document.getElementById('dTo').value=rg[1];
   }
   function renderPeriodNote(){
-    var rg=curRange();
-    document.getElementById('periodNote').textContent = rg[0].replace(/-/g,'.')+' ~ '+rg[1].replace(/-/g,'.')+' · 모든 탭 공통 · 기준: 캠페인 생성일';
+    var head;
+    if(PERIOD.preset==='months'){
+      var ms=selMonths();
+      head = ms.length? ms.map(function(k){ return k.replace('-','.'); }).join(', ') : '선택된 월 없음';
+    } else {
+      var rg=curRange(); head = rg[0].replace(/-/g,'.')+' ~ '+rg[1].replace(/-/g,'.');
+    }
+    document.getElementById('periodNote').textContent = head+' · 모든 탭 공통 · 기준: 캠페인 생성일';
   }
 
   /* ── 홈 ── */
@@ -468,8 +546,9 @@
     var rate = A.tot>0? (A.op/A.tot*100) : 0;
     var prog=(A.st['모집중']||0)+(A.st['추가모집']||0);
     var h='';
-    h+='<div class="row k5">';
+    h+='<div class="row k6">';
     h+=kpi('📈','매출 (+VAT)', '<span style="color:var(--blue)">'+eok(A.tot)+'</span>', f(A.ok.length)+'건'+(delta!=null? ' · 이번 달 '+eok(mNow.sales)+' <span class="'+(delta>=0?'up':'dn')+'">'+(delta>=0?'▲':'▼')+Math.abs(delta)+'%</span>':''));
+    h+=kpi('🪙','포인트 수익','<span style="color:var(--green)">'+eok(A.prf)+'</span>','매출 대비 '+(A.tot? (A.prf/A.tot*100).toFixed(1):'0.0')+'% · 수수료·마케팅비 차감 전');
     h+=kpi('💸','비용 합계','<span style="color:var(--amber)">'+eok(A.costAll)+'</span>','수수료 '+eok(A.fee)+' + 마케팅비 '+(A.mkt? eok(A.mkt):'0'));
     h+='<div class="card hero"><div class="lb">💎 영업이익</div><div class="v">'+eok(A.op)+'</div><div class="s">포인트 수익 '+eok(A.prf)+' − 비용 '+eok(A.costAll)+'</div></div>';
     h+=kpi('📊','이익률', rate.toFixed(1)+'%','영업이익 ÷ 매출'+(A.mkt? '' : ' · ⚠ 마케팅비 미입력'));
@@ -850,8 +929,17 @@
       applyTheme();
     },
     refresh: function(){ refresh(true); },
-    preset: function(p){ PERIOD.preset=p; resetOpen(); render(); },
-    applyRange: function(){ var a=document.getElementById('dFrom').value, b=document.getElementById('dTo').value; if(!a||!b||a>b) return; PERIOD={preset:'custom',from:a,to:b}; resetOpen(); render(); },
+    preset: function(p){ PERIOD.preset=p; PERIOD.months=[]; resetOpen(); render(); },
+    pickYr: function(d){ PICKYR+=d; renderSeg(); },
+    pickM: function(k){
+      if(PERIOD.preset!=='months'){ PERIOD={preset:'months', from:null, to:null, months:[]}; }
+      var i=PERIOD.months.indexOf(k);
+      if(i>=0) PERIOD.months.splice(i,1); else PERIOD.months.push(k);
+      if(!PERIOD.months.length){ PERIOD={preset:'year', from:null, to:null, months:[]}; }
+      resetOpen(); render();
+    },
+    pickClear: function(){ PERIOD={preset:'year', from:null, to:null, months:[]}; resetOpen(); render(); },
+    applyRange: function(){ var a=document.getElementById('dFrom').value, b=document.getElementById('dTo').value; if(!a||!b||a>b) return; PERIOD={preset:'custom',from:a,to:b,months:[]}; resetOpen(); render(); },
     togM: function(k){ OPENM[k]= OPENM[k]? null: 1; render(); },
     moreM: function(k){ OPENM[k]='all'; render(); },
     togCh: function(k){ OPENCH[k]=!OPENCH[k]; render(); },
