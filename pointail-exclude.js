@@ -146,8 +146,11 @@
       '#ptx-drw.on{transform:none}',
       '#ptx-drw .hd{padding:14px 18px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;gap:10px} #ptx-drw .hd h3{margin:0;font-size:15.5px}',
       '#ptx-drw .tl{padding:10px 18px;border-bottom:1px solid #e5e7eb;display:flex;gap:7px;flex-wrap:wrap;align-items:center}',
-      '#ptx-drw .tl input,#ptx-drw .tl select{border:1px solid #e5e7eb;border-radius:8px;padding:6px 9px;font:inherit;font-size:12.5px}',
-      '#ptx-drw .tl input{flex:1;min-width:140px}',
+      '#ptx-drw .tl input,#ptx-drw .tl select{border:1px solid #e5e7eb;border-radius:8px;padding:6px 9px;font:inherit;font-size:12.5px;height:auto!important}',
+      /* 전역 CSS(display:block;width:100%) 덮어쓰기 — 드로어 도구 줄이 세로로 쌓이는 것 방지 */
+      '#ptx-drw .tl input{flex:1 1 150px;min-width:130px;width:auto!important;display:block}',
+      '#ptx-drw .tl select{flex:0 0 auto;width:auto!important;min-width:128px;display:inline-block!important}',
+      '#ptx-drw .tl button{flex:0 0 auto}',
       '#ptx-drw .body{flex:1;overflow:auto} #ptx-drw .ft{padding:10px 18px;border-top:1px solid #e5e7eb;display:flex;gap:8px;align-items:center;font-size:12px;color:#8a94a6}',
       '#ptx-drw .er{display:flex;align-items:center;gap:10px;padding:8px 18px;border-bottom:1px solid #f1f3f6;font-size:12.5px}',
       '#ptx-drw .er .g{flex:1;min-width:0} #ptx-drw .er .g .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}',
