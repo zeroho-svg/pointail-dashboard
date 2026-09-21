@@ -102,7 +102,10 @@
       '.ptx .filt{background:#fff;border:1px solid var(--l);border-radius:11px;padding:11px 13px;margin-bottom:10px}',
       '.ptx .frow{display:flex;gap:7px;flex-wrap:wrap;align-items:center}',
       '.ptx .frow input[type=text],.ptx .frow select{border:1px solid var(--l);border-radius:8px;padding:6px 9px;font:inherit;font-size:12.5px;color:var(--i);background:#fff}',
-      '.ptx .frow input[type=text]{flex:1;min-width:200px}',
+      /* index.html 전역 CSS가 select/input을 display:block;width:100% 로 강제하므로 덮어쓴다 */
+      '.ptx .frow input[type=text]{flex:1 1 240px;min-width:200px;width:auto!important;display:block}',
+      '.ptx .frow select{flex:0 0 auto;width:auto!important;min-width:128px;max-width:210px;display:inline-block!important;height:auto!important}',
+      '.ptx .frow .xb{flex:0 0 auto}',
       '.ptx .chips{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-top:9px;padding-top:9px;border-top:1px dashed var(--l)}',
       '.ptx .chips .lb{font-size:11.5px;color:var(--m);font-weight:700;margin-right:2px}',
       '.ptx .chip{border:1px solid var(--l);background:#fff;border-radius:20px;padding:4px 11px;font-size:12px;font-weight:600;color:var(--i2);cursor:pointer}',
